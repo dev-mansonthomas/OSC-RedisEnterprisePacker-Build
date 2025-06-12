@@ -1,0 +1,43 @@
+# Fichiers de cache et bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Répertoires d'environnements virtuels
+venv/
+virtualenv/
+env/
+.venv/
+.env/
+
+# Fichiers de configuration spécifiques à l'IDE
+.idea/
+.vscode/
+*.swp
+
+# Fichiers de dépendances et de build
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Fichiers de logs
+*.log
+
+# Fichiers de base de données locaux
+.sqlite3
+db.sqlite3
+
+# Fichiers de tests et de couverture
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Fichiers secrets et de configuration locale
+.env.*
+*.env
+secrets.toml
+
+# Fichiers specifiques
+redis-software/*
+build_scripts/manifest.json

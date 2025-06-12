@@ -1,0 +1,85 @@
+Created VPC: vpc-02ada4795e56aa91a
+Created IGW: igw-074d579064ae7ae99
+Attached IGW to VPC
+Created Route Table: rtb-05725714d653ec948
+{
+    "Return": true
+}
+Created default route to IGW
+Created Subnet: subnet-00110358333edc744 in AZ: eu-west-3a
+{
+    "AssociationId": "rtbassoc-0bf9b351575a68d9d",
+    "AssociationState": {
+        "State": "associated"
+    }
+}
+Configured subnet subnet-00110358333edc744 as public
+Created Subnet: subnet-01accde094d329e2c in AZ: eu-west-3b
+{
+    "AssociationId": "rtbassoc-004a213a0d642e0a1",
+    "AssociationState": {
+        "State": "associated"
+    }
+}
+Configured subnet subnet-01accde094d329e2c as public
+Created Subnet: subnet-0cbb7f3d145c3af57 in AZ: eu-west-3c
+{
+    "AssociationId": "rtbassoc-072dd067a6be033f4",
+    "AssociationState": {
+        "State": "associated"
+    }
+}
+Configured subnet subnet-0cbb7f3d145c3af57 as public
+VPC setup complete. VPC ID: vpc-02ada4795e56aa91a
+Created Security Group: sg-070a3e1778c4d4366
+Authorizing SSH access...
+{
+    "Return": true,
+    "SecurityGroupRules": [
+        {
+            "SecurityGroupRuleId": "sgr-09ae4da837422fcdb",
+            "GroupId": "sg-070a3e1778c4d4366",
+            "GroupOwnerId": "735486936198",
+            "IsEgress": false,
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIpv4": "0.0.0.0/0",
+            "SecurityGroupRuleArn": "arn:aws:ec2:eu-west-3:735486936198:security-group-rule/sgr-09ae4da837422fcdb"
+        }
+    ]
+}
+Authorizing HTTPS on 8443...
+{
+    "Return": true,
+    "SecurityGroupRules": [
+        {
+            "SecurityGroupRuleId": "sgr-08af6fc0c49c50bbc",
+            "GroupId": "sg-070a3e1778c4d4366",
+            "GroupOwnerId": "735486936198",
+            "IsEgress": false,
+            "IpProtocol": "tcp",
+            "FromPort": 8443,
+            "ToPort": 8443,
+            "CidrIpv4": "0.0.0.0/0",
+            "SecurityGroupRuleArn": "arn:aws:ec2:eu-west-3:735486936198:security-group-rule/sgr-08af6fc0c49c50bbc"
+        }
+    ]
+}
+Authorizing TCP range 12000-12100...
+{
+    "Return": true,
+    "SecurityGroupRules": [
+        {
+            "SecurityGroupRuleId": "sgr-065417f285d71c894",
+            "GroupId": "sg-070a3e1778c4d4366",
+            "GroupOwnerId": "735486936198",
+            "IsEgress": false,
+            "IpProtocol": "tcp",
+            "FromPort": 12000,
+            "ToPort": 12100,
+            "CidrIpv4": "0.0.0.0/0",
+            "SecurityGroupRuleArn": "arn:aws:ec2:eu-west-3:735486936198:security-group-rule/sgr-065417f285d71c894"
+        }
+    ]
+}
