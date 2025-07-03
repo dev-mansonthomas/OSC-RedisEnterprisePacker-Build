@@ -3,6 +3,11 @@ source "$(dirname "$0")/../_my_env.sh"
 
 
 SUBNET_IDX="$1"
+MACHINE_TYPE="$2"
+
+if [[ -z "$MACHINE_TYPE" ]]; then
+  MACHINE_TYPE="t3.xlarge"
+fi
 
 if [[ -z "$SUBNET_IDX" ]]; then
   echo "Usage: $0 <subnet-index>"
@@ -24,7 +29,7 @@ if [[ -z "$SUBNET_ID" ]]; then echo "${SUBNET_ID_VAR} is not set"; exit 1; fi
 INSTANCE_ID=$(aws ec2 run-instances \
   --image-id "$AMI_ID" \
   --count 1 \
-  --instance-type t3.medium \
+  --instance-type "$MACHINE_TYPE" \
   --key-name "$KEY_NAME" \
   --security-group-ids "$SECURITY_GROUP_ID" \
   --subnet-id "$SUBNET_ID" \

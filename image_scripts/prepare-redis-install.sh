@@ -2,54 +2,96 @@
 set -euo pipefail
 
 # --- Update base system ---
-sudo apt-get update -y
-sudo apt-get upgrade -y
+apt-get update -y
+apt-get upgrade -y
+
+# --- Configure umask for root & ubuntu ---
+echo "umask 0022" | tee -a /root/.profile > /dev/null
+echo "umask 0022" >> ~/.profile
+umask 0022
 
 # --- Configure & enable UFW (firewall) ---
-sudo apt-get install -y ufw
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow ssh
-sudo ufw allow 8001/tcp
-sudo ufw allow 8070/tcp
-sudo ufw allow 8443/tcp
-sudo ufw allow 8444/tcp
-sudo ufw allow 9080/tcp
-sudo ufw allow 9081/tcp
-sudo ufw allow 9443/tcp
-sudo ufw allow 10000:19999/tcp
-sudo ufw allow 20000:29999/tcp
-sudo ufw allow 53/udp
-sudo ufw allow 5353/udp
-sudo ufw --force enable
+apt-get install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow 8001/tcp
+ufw allow 8070/tcp
+ufw allow 8443/tcp
+ufw allow 8444/tcp
+ufw allow 9080/tcp
+ufw allow 9081/tcp
+ufw allow 9443/tcp
+ufw allow 10000:19999/tcp
+ufw allow 20000:29999/tcp
+ufw allow 53/udp
+ufw allow 5353/udp
+ufw --force enable
 
 # --- Installation of Audit Daemon---
 # consider this later
-#sudo apt-get install -y auditd
+#apt-get install -y auditd
 # 
 
+#--- install dpkg-sig to check redis .deb signature ---
+apt-get install -y dpkg-sig
+
+# --- Install utilities ---
+apt-get -y install vim iotop iputils-ping curl jq netcat dnsutils
+
 # --- Disable swap permanently ---
-sudo swapoff -a
-sudo systemctl mask swap.target
+swapoff -a
+systemctl mask swap.target
+
+# --- Package clean up ---
+apt-get remove --purge -y snapd apport unattended-upgrades
+apt-get autoremove -y
+
+
+# --- Remove systemd-resolved to avoid conflifct with Redis mdns server ---
+sed -i '$a DNSStubListener=no' /etc/systemd/resolved.conf
+mv /etc/resolv.conf /etc/resolv.conf.orig
+ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
+
+# --- Harden SSH configuration ---
+sed -i '/^#\?PermitRootLogin/s/.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i '/^#\?PasswordAuthentication/s/.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i '/^#\?ChallengeResponseAuthentication/s/.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+grep -q '^AllowUsers' /etc/ssh/sshd_config && \
+  sed -i '/^AllowUsers/s/.*/AllowUsers ubuntu/' /etc/ssh/sshd_config || \
+  echo 'AllowUsers ubuntu' | tee -a /etc/ssh/sshd_config
+systemctl restart sshd
+
+
+# --- Disabling AppArmor ---
+systemctl disable --now apparmor
 
 # --- Extract Redis Enterprise archive ---
 cd /home/ubuntu
 mkdir redis-enterprise
 tar -xf redis-enterprise.tar -C redis-enterprise
+mv redis-install-answsers.txt ./redis-enterprise
 
-# --- Package clean up ---
-sudo apt-get remove --purge -y snapd apport unattended-upgrades
-sudo apt-get autoremove -y
+# --- Import Redis GPG key ---
+gpg --import /home/ubuntu/redis-enterprise/rlec_install_utils_tmpdir/GPG-KEY-redislabs-packages || {
+  echo "ERROR: Failed to import Redis GPG key"
+  exit 1
+}
 
-# --- Disable unnecessary services ---
-sudo systemctl disable apt-daily.service apt-daily-upgrade.service
-sudo systemctl disable pollinate.service motd-news.service
+# --- Verify Redis .deb signature ---
+dpkg-sig --verify /home/ubuntu/redis-enterprise/redislabs_*.deb || {
+  echo "ERROR: Signature verification of Redis .deb package failed"
+  exit 1
+}
 
-# --- Harden SSH configuration ---
-sudo sed -i '/^#\?PermitRootLogin/s/.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo sed -i '/^#\?PasswordAuthentication/s/.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i '/^#\?ChallengeResponseAuthentication/s/.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
-sudo grep -q '^AllowUsers' /etc/ssh/sshd_config && \
-  sudo sed -i '/^AllowUsers/s/.*/AllowUsers ubuntu/' /etc/ssh/sshd_config || \
-  echo 'AllowUsers ubuntu' | sudo tee -a /etc/ssh/sshd_config
-sudo systemctl restart sshd
+# --- deamon reload ---
+sudo systemctl daemon-reload
+
+# --- Install Redis Enterprise ---
+cd /home/ubuntu/redis-enterprise
+bash -x ./install.sh -c ./redis-install-answsers.txt
+
+
+#After installing the Redis Enterprise Software package on the instance and before running through the setup process, you must give the group redislabs permission to the EBS volume by running the following command from the OS command-line interface (CLI):
+#chown redislabs:redislabs /< ebs folder name>

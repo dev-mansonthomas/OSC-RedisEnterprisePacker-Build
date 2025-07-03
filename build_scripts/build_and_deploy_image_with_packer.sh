@@ -3,9 +3,15 @@
 HCL_FILE=../packer/ubuntu_ufw_aws_image.pkr.hcl
 MANIFEST_FILE=./manifest.json
 
+# Parse optional -debug flag to enable Packer debug mode
+BUILD_OPTS=""
+if [[ "${1:-}" == "-debug" ]]; then
+  BUILD_OPTS="-debug -on-error=ask"
+fi
+
 packer init     $HCL_FILE
 packer validate $HCL_FILE
-packer build    $HCL_FILE
+packer build    $BUILD_OPTS $HCL_FILE
 
 # Extract AMI ID from manifest.json
 if [[ -f "$MANIFEST_FILE" ]]; then

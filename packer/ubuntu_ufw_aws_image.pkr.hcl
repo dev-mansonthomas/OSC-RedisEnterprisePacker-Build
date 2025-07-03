@@ -32,14 +32,30 @@ variable "redis_tarball_name" {
   default = "redislabs-7.22.0-95-jammy-amd64.tar"
 }
 
+variable "build_instance_type" {
+  type    = string
+  default = "t3.large"     # 2 vCPU, 8 GiB RAM
+}
+
+variable "root_volume_size" {
+  type    = number
+  default = 10             # GiB
+}
+
 
 source "amazon-ebs" "ubuntu_base_for_redis_enteprise" {
   region                  = var.region
-  instance_type           = var.instance_type
+  instance_type           = var.build_instance_type
   source_ami              = var.source_ami
   ami_name                = var.ami_name
   ssh_username            = "ubuntu"
   associate_public_ip_address = true
+  launch_block_device_mappings {
+    device_name           = "/dev/sda1"
+    volume_size           = var.root_volume_size
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
   tags = {
     Name = var.ami_name
   }
@@ -60,11 +76,19 @@ build {
   }
 
   provisioner "file" {
+    source      = "../image_scripts/redis-install-answsers.txt"
+    destination = "/home/ubuntu/redis-install-answsers.txt"
+  }
+
+  provisioner "file" {
     source      = "../redis-software/${var.redis_tarball_name}"
     destination = "/home/ubuntu/redis-enterprise.tar"
   }
 
   provisioner "shell" {
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive"
+    ]
     inline = [
       "chmod +x /home/ubuntu/prepare-redis-install.sh",
       "sudo /home/ubuntu/prepare-redis-install.sh"

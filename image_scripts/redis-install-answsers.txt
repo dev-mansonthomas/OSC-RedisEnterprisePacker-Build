@@ -1,0 +1,8 @@
+ignore_swap=no
+systune=yes
+ntp=no
+firewall=no
+rlcheck=yes
+ignore_existing_osuser_osgroup=no
+add_to_path=yes
+skip_updating_env_path=no
