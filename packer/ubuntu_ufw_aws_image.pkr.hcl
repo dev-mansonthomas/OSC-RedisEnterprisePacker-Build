@@ -91,7 +91,16 @@ build {
     ]
     inline = [
       "chmod +x /home/ubuntu/prepare-redis-install.sh",
-      "sudo /home/ubuntu/prepare-redis-install.sh"
+      "DEBIAN_FRONTEND=noninteractive sudo -E /home/ubuntu/prepare-redis-install.sh"
     ]
   }
 }
+# DEBIAN_FRONTEND=noninteractive sudo -E 
+# is to fix the following warning/error :
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: unable to initialize frontend: Dialog
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: falling back to frontend: Readline
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: unable to initialize frontend: Readline
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: (This frontend requires a controlling tty.)
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: falling back to frontend: Teletype
+#==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: dpkg-preconfigure: unable to re-open stdin:

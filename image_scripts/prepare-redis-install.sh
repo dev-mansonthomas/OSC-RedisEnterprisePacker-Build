@@ -52,6 +52,7 @@ apt-get autoremove -y
 sed -i '$a DNSStubListener=no' /etc/systemd/resolved.conf
 mv /etc/resolv.conf /etc/resolv.conf.orig
 ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+sudo service systemd-resolved restart
 
 
 # --- Harden SSH configuration ---
