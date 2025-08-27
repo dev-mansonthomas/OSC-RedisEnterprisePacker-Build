@@ -41,6 +41,12 @@ Default region name [None]: eu-west-3
 Default output format [None]: json
 ```
 
+Update `_my_env.sh` with (copy the `_my_env_.sh_template` file)
+ * `OWNER`       : Who is owner of the AWS VPC, this will be set in as VPC name and in tag, used by `aws-setup.sh`, ex: `OWNER="thomas-manson"`
+ * `REGION`      : Which Region will Redis Enteprise be deployed by `my_instanciate.sh`, ex `REGION=eu-west-3`
+ * `REDIS_LOGIN` : Redis Enterprise administrator login,    used by `my_instanciate.sh`, ex `REDIS_LOGIN=adm@redis.io`
+ * `REDIS_PWD`   : Redis Enterprise administrator password, used by `my_instanciate.sh`, ex `REDIS_PWD=redis_adm`
+
 3. **import your ssh public key**
 
 ```sh
@@ -49,7 +55,10 @@ aws ec2 import-key-pair \
   --public-key-material fileb://~/.ssh/id_ed25519.pub
 ```
 
-4. ** Configure your DNS server **
+Add the `KEY-NAME` value (ex: tmanson-aws-key) in `_my_env.sh`
+`KEY_NAME=tmanson-aws-key`
+
+4. **Configure your DNS server**
 
     Let's say you own `paquerette.com` domain, and want to use `aws.paquerette.com` for the Redis Cluster
 
@@ -97,6 +106,12 @@ aws.paquerette.Com.	86400	IN	NS	ns-xx.awsdns-04.net.
 ;; MSG SIZE  rcvd: 184
 ```
 
+add 
+
+`CLUSTER_DNS=aws.paquerette.com`
+
+to `_my_env.sh`
+
 
 ## Usage
 
@@ -109,6 +124,21 @@ Run the following scripts in order from the project root:
    ./aws-setup.sh
    ```
 
+   This will append the following variables to `_my_env.sh` with the various IDs generated during the setup of the VPC
+
+   ```sh
+   VPC_ID=vpc-xxx
+   IGW_ID=igw-xxx
+   RTB_ID=rtb-xxx
+   SG_ID=sg-xxx
+   SUBNET1=subnet-xxx
+   SUBNET2=subnet-xxx
+   SUBNET3=subnet-xxx
+   AZ1=eu-west-3a
+   AZ2=eu-west-3b
+   AZ3=eu-west-3c
+   ```
+
 2. **Build and Deploy the Packer Image:**
 
    ```sh
@@ -116,11 +146,24 @@ Run the following scripts in order from the project root:
    ./build_and_deploy_image_with_packer.sh
    ```
 
+   This will append the AMI_ID  to `_my_env.sh`
+   ```sh
+   AMI_ID=ami-0bc191cbbc5e8392d
+   ```
+
+
 3. **Instantiate an EC2 Instance from the Built Image:**
 
    ```sh
    cd aws/
    my_instanciate.sh
+   ```
+
+   This will append the following variables to `_my_env.sh` with the various IDs generated during the setup of the VPC
+   ```sh
+   INSTANCE_PUBLIC_IP_1=13.38.11.137 #i-0f3731bccbefe8256
+   INSTANCE_PUBLIC_IP_2=51.44.42.52 #i-0570bff1ec77d91bf
+   INSTANCE_PUBLIC_IP_3=51.44.4.244 #i-0fe563086da4d41df
    ```
 
 4. **Connect to Your Instance:**
@@ -152,7 +195,8 @@ teardown-aws-vpc.sh
 
 ---
 
-TODO : 
+TODO : https://redis.io/docs/latest/operate/rs/references/cli-utilities/rladmin/cluster/join/
+* test renable ufw + firewall=yes in the answer file
 * gestion des mounts points
 * installation scriptée
 * Ajout de la license

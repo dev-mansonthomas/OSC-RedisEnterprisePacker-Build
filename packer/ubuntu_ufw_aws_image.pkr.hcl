@@ -5,7 +5,15 @@ packer {
       version = "~> 1.0"
     }
   }
+  # required_plugins {
+  #   outscale = {
+  #     version = ">= 1.0.0"
+  #     source  = "github.com/outscale/outscale"
+  #   }
+  # }
+  # required_version = ">= 1.7.0, < 2.0.0"
 }
+
 
 variable "region" {
   type    = string
@@ -42,12 +50,24 @@ variable "root_volume_size" {
   default = 10             # GiB
 }
 
+variable "projet" {
+  type = string
+  default = "redis-enterprise-ubuntu"
+}
+
+locals {
+  image-timestamp = "${formatdate("DD-MM-YYYY-hh-mm", timestamp())}"
+  image-name = "packer-${var.projet}-${local.image-timestamp}"
+}
+
 
 source "amazon-ebs" "ubuntu_base_for_redis_enteprise" {
   region                  = var.region
   instance_type           = var.build_instance_type
   source_ami              = var.source_ami
   ami_name                = var.ami_name
+  #source_omi = var.omi_source
+  #omi_name                = local.image-name
   ssh_username            = "ubuntu"
   associate_public_ip_address = true
   launch_block_device_mappings {
@@ -76,6 +96,11 @@ build {
   }
 
   provisioner "file" {
+    source      = "../image_scripts/install-redis.sh"
+    destination = "/home/ubuntu/install-redis.sh"
+  }
+
+  provisioner "file" {
     source      = "../image_scripts/redis-install-answsers.txt"
     destination = "/home/ubuntu/redis-install-answsers.txt"
   }
@@ -94,6 +119,35 @@ build {
       "DEBIAN_FRONTEND=noninteractive sudo -E /home/ubuntu/prepare-redis-install.sh"
     ]
   }
+
+  provisioner "shell" {
+    inline = [
+      # On prévoit un délai avant le reboot pour laisser le temps
+      "echo 'sleep 10'",
+      "sleep 10",
+      # On déclenche le reboot
+      "echo '###################################################################################'",
+      "echo '# Rebooting the instance to apply changes...'",
+      "echo '###################################################################################'",
+      "sudo reboot"
+    ]
+    # Packer verra la déconnexion comme normale
+    expect_disconnect = true
+  }
+
+
+    provisioner "shell" {
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive"
+    ]
+    pause_before = "30s"
+    inline = [
+      "chmod +x /home/ubuntu/install-redis.sh",
+      "DEBIAN_FRONTEND=noninteractive sudo -E /home/ubuntu/install-redis.sh"
+    ]
+  }
+
+
 }
 # DEBIAN_FRONTEND=noninteractive sudo -E 
 # is to fix the following warning/error :

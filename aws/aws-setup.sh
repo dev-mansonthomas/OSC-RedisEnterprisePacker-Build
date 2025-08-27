@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source "$(dirname "$0")/../_my_env.sh"
+
 REGION="eu-west-3"
-OWNER="thomas-manson"
 NAME="${OWNER}-vpc"
 
 # Create VPC
@@ -28,7 +29,8 @@ echo "Created IGW: $IGW_ID"
 aws ec2 attach-internet-gateway \
   --internet-gateway-id "$IGW_ID" \
   --vpc-id "$VPC_ID" \
-  --region "$REGION"
+  --region "$REGION" \
+  --output text
 
 echo "Attached IGW to VPC"
 
@@ -47,7 +49,8 @@ aws ec2 create-route \
   --route-table-id "$RTB_ID" \
   --destination-cidr-block 0.0.0.0/0 \
   --gateway-id "$IGW_ID" \
-  --region "$REGION"
+  --region "$REGION" \
+  --output text
 
 echo "Created default route to IGW"
 
@@ -75,13 +78,15 @@ for i in 1 2 3; do
   aws ec2 modify-subnet-attribute \
     --subnet-id "$SUBNET_ID" \
     --map-public-ip-on-launch \
-    --region "$REGION"
+    --region "$REGION" \
+    --output text
 
   # Associate route table
   aws ec2 associate-route-table \
     --subnet-id "$SUBNET_ID" \
     --route-table-id "$RTB_ID" \
-    --region "$REGION"
+    --region "$REGION" \
+    --output text
 
   echo "Configured subnet $SUBNET_ID as public"
 done
@@ -99,6 +104,7 @@ SG_ID=$(aws ec2 create-security-group \
 
 echo "Created Security Group: $SG_ID"
 
+#
 # Add ingress rules
 echo "Authorizing SSH access..."
 aws ec2 authorize-security-group-ingress \
@@ -106,23 +112,50 @@ aws ec2 authorize-security-group-ingress \
   --protocol tcp \
   --port 22 \
   --cidr 0.0.0.0/0 \
-  --region "$REGION"
+  --region "$REGION" \
+  --output text
 
-echo "Authorizing HTTPS on 8443..."
-aws ec2 authorize-security-group-ingress \
-  --group-id "$SG_ID" \
-  --protocol tcp \
-  --port 8443 \
-  --cidr 0.0.0.0/0 \
-  --region "$REGION"
+echo "Authorizing external access ports..."
+for port in 8001 8070 8080 3346 8443 9443 10000-10049 10051-19999; do
+  aws ec2 authorize-security-group-ingress \
+    --group-id "$SG_ID" \
+    --protocol tcp \
+    --port "$port" \
+    --cidr 0.0.0.0/0 \
+    --region "$REGION" \
+    --output text
+    
+done
 
-echo "Authorizing TCP range 12000-12100..."
-aws ec2 authorize-security-group-ingress \
-  --group-id "$SG_ID" \
-  --protocol tcp \
-  --port 12000-12100 \
-  --cidr 0.0.0.0/0 \
-  --region "$REGION"
+echo "Authorizing internal access ports..."
+for port in 8001 8002 8004 8006 8071 8443 9080 9081 9082 9091 9125 9443 10050 10000-10049 10051-19999 1968 3333-3345 3346 3347-3349 3350-3354 3355 36379 20000-29999; do
+  aws ec2 authorize-security-group-ingress \
+    --group-id "$SG_ID" \
+    --protocol tcp \
+    --port "$port" \
+    --cidr 10.0.0.0/8 \
+    --region "$REGION" \
+    --output text
+done
+
+echo "Authorizing UDP ports (53, 5353) internal and external..."
+for port in 53 5353; do
+  aws ec2 authorize-security-group-ingress \
+    --group-id "$SG_ID" \
+    --protocol udp \
+    --port "$port" \
+    --cidr 0.0.0.0/0 \
+    --region "$REGION" \
+    --output text
+
+  aws ec2 authorize-security-group-ingress \
+    --group-id "$SG_ID" \
+    --protocol udp \
+    --port "$port" \
+    --cidr 10.0.0.0/8 \
+    --region "$REGION" \
+    --output text
+done
 
 
 
@@ -148,8 +181,11 @@ ENV_FILE="../_my_env.sh"
   echo "IGW_ID=$IGW_ID"
   echo "RTB_ID=$RTB_ID"
   echo "SG_ID=$SG_ID"
-  echo "SUBNET1=${SUBNET_IDS[0]}  # ${AZS[0]}"
-  echo "SUBNET2=${SUBNET_IDS[1]}  # ${AZS[1]}"
-  echo "SUBNET3=${SUBNET_IDS[2]}  # ${AZS[2]}"
-} > "$ENV_FILE"
+  echo "SUBNET1=${SUBNET_IDS[0]}"
+  echo "SUBNET2=${SUBNET_IDS[1]}"
+  echo "SUBNET3=${SUBNET_IDS[2]}"
+  echo "AZ1=${AZS[0]}"
+  echo "AZ2=${AZS[1]}"
+  echo "AZ3=${AZS[2]}"
+} >> "$ENV_FILE"
 echo "Environment variables saved to $ENV_FILE"

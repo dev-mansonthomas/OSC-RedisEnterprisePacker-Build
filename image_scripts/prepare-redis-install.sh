@@ -11,22 +11,30 @@ echo "umask 0022" >> ~/.profile
 umask 0022
 
 # --- Configure & enable UFW (firewall) ---
-apt-get install -y ufw
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh
-ufw allow 8001/tcp
-ufw allow 8070/tcp
-ufw allow 8443/tcp
-ufw allow 8444/tcp
-ufw allow 9080/tcp
-ufw allow 9081/tcp
-ufw allow 9443/tcp
-ufw allow 10000:19999/tcp
-ufw allow 20000:29999/tcp
-ufw allow 53/udp
-ufw allow 5353/udp
-ufw --force enable
+# redis-install-answers.txt : firewall=yes if ufw 
+
+# apt-get install -y ufw
+# ufw default deny incoming
+# ufw default allow outgoing
+
+# ufw allow in on lo
+# ufw allow out on lo
+
+# ufw allow ssh
+# ufw allow 8001/tcp
+# ufw allow 8070/tcp
+# ufw allow 8443/tcp
+# ufw allow 8444/tcp
+# ufw allow 9080/tcp
+# ufw allow 9081/tcp
+# ufw allow 9443/tcp
+# ufw allow 10000:19999/tcp
+# ufw allow 20000:29999/tcp
+# ufw allow 53/udp
+# ufw allow 5353/udp
+# ufw --force enable
+
+# systemctl daemon-reload
 
 # --- Installation of Audit Daemon---
 # consider this later
@@ -52,7 +60,7 @@ apt-get autoremove -y
 sed -i '$a DNSStubListener=no' /etc/systemd/resolved.conf
 mv /etc/resolv.conf /etc/resolv.conf.orig
 ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
-sudo service systemd-resolved restart
+service systemd-resolved restart
 
 
 # --- Harden SSH configuration ---
@@ -86,12 +94,13 @@ dpkg-sig --verify /home/ubuntu/redis-enterprise/redislabs_*.deb || {
   exit 1
 }
 
-# --- deamon reload ---
-sudo systemctl daemon-reload
 
-# --- Install Redis Enterprise ---
-cd /home/ubuntu/redis-enterprise
-bash -x ./install.sh -c ./redis-install-answsers.txt
+# --- deamon reload ---
+systemctl daemon-reload
+
+# Expand ephemeral port range to avoid collisions
+echo 'net.ipv4.ip_local_port_range = 30000 65535' | tee -a /etc/sysctl.conf
+sysctl -p /etc/sysctl.conf
 
 
 #After installing the Redis Enterprise Software package on the instance and before running through the setup process, you must give the group redislabs permission to the EBS volume by running the following command from the OS command-line interface (CLI):

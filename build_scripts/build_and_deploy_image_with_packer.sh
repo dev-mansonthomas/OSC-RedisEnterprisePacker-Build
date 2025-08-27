@@ -17,7 +17,7 @@ packer build    $BUILD_OPTS $HCL_FILE
 if [[ -f "$MANIFEST_FILE" ]]; then
   AMI_ID=$(jq -r --arg uuid "$(jq -r '.last_run_uuid' "$MANIFEST_FILE")" '.builds[] | select(.packer_run_uuid == $uuid) | .artifact_id' "$MANIFEST_FILE" | cut -d':' -f2)
   echo "AMI_ID=$AMI_ID"
-  echo "export AMI_ID=$AMI_ID" >> ../_my_env.sh
+  echo "AMI_ID=$AMI_ID" >> ../_my_env.sh
 else
   echo "manifest.json not found. AMI ID not extracted."
 fi
