@@ -80,7 +80,7 @@ systemctl disable --now apparmor
 cd /home/ubuntu
 mkdir redis-enterprise
 tar -xf redis-enterprise.tar -C redis-enterprise
-mv redis-install-answsers.txt ./redis-enterprise
+mv redis-install-answers.txt ./redis-enterprise
 
 # --- Import Redis GPG key ---
 gpg --import /home/ubuntu/redis-enterprise/rlec_install_utils_tmpdir/GPG-KEY-redislabs-packages || {

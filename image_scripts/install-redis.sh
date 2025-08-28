@@ -15,4 +15,4 @@ echo "##########################################################################
 
 # --- Install Redis Enterprise ---
 cd /home/ubuntu/redis-enterprise
-bash -x ./install.sh -c ./redis-install-answsers.txt
+bash -x ./install.sh -c ./redis-install-answers.txt

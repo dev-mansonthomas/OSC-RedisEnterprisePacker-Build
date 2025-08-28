@@ -190,8 +190,7 @@ teardown-aws-vpc.sh
 
 - The project uses [`packer/ubuntu_ufw_aws_image.pkr.hcl`](packer/ubuntu_ufw_aws_image.pkr.hcl ) as the Packer template.
 - Redis Enterprise tarball must be present in [`redis-software`](redis-software ).
-- Environment variables for resource IDs are stored in `_my_env.sh` (auto-generated).
-- All scripts assume the default AWS region is `eu-west-3`.
+- Environment variables for resource IDs are stored in `_my_env.sh`.
 
 ---
 

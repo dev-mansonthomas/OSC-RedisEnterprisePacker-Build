@@ -5,91 +5,81 @@ packer {
       version = "~> 1.0"
     }
   }
-  # required_plugins {
-  #   outscale = {
-  #     version = ">= 1.0.0"
-  #     source  = "github.com/outscale/outscale"
-  #   }
-  # }
-  # required_version = ">= 1.7.0, < 2.0.0"
 }
-
 
 variable "region" {
   type    = string
   default = "eu-west-3"
 }
 
-variable "instance_type" {
-  type    = string
-  default = "t3.medium"
-}
-
-variable "ami_name" {
-  type    = string
-  default = "ubuntu-ufw-lts-aws-{{timestamp}}"
-}
-
-variable "source_ami" {
-  type    = string
-  default = "ami-007c433663055a1cc" # Ubuntu 22.04 LTS AMI for AWS in eu-west-3
-}
-
-variable "redis_tarball_name" {
-  type    = string
-  default = "redislabs-7.22.0-95-jammy-amd64.tar"
-}
-
 variable "build_instance_type" {
   type    = string
-  default = "t3.large"     # 2 vCPU, 8 GiB RAM
+  default = "t3.large"
 }
 
 variable "root_volume_size" {
   type    = number
-  default = 10             # GiB
+  default = 30
 }
 
-variable "projet" {
-  type = string
-  default = "redis-enterprise-ubuntu"
+variable "source_ami" {
+  type    = string
+  default = "ami-007c433663055a1cc" # Ubuntu 22.04 LTS in eu-west-3
+}
+
+variable "redis_version" {
+  type    = string
+  default = "7.22.0-95"
 }
 
 locals {
-  image-timestamp = "${formatdate("DD-MM-YYYY-hh-mm", timestamp())}"
-  image-name = "packer-${var.projet}-${local.image-timestamp}"
+  # Évite d’échapper des guillemets dans les chaînes : compose les noms ici
+  ts                 = formatdate("YYYYMMDD-hhmm", timestamp())
+  ami_name           = "packer-redis-enterprise-${var.redis_version}-ubuntu-22-lts-aws-${local.ts}"
+  redis_tarball_name = "redislabs-${var.redis_version}-jammy-amd64.tar"
+  common_tags = {
+    Name         = local.ami_name
+    Project      = "redis-enterprise"
+    RedisVersion = var.redis_version
+    ManagedBy    = "packer"
+  }
 }
 
+source "amazon-ebs" "ubuntu_base_for_redis_enterprise" {
+  region                        = var.region
+  instance_type                 = var.build_instance_type
+  source_ami                    = var.source_ami
 
-source "amazon-ebs" "ubuntu_base_for_redis_enteprise" {
-  region                  = var.region
-  instance_type           = var.build_instance_type
-  source_ami              = var.source_ami
-  ami_name                = var.ami_name
-  #source_omi = var.omi_source
-  #omi_name                = local.image-name
-  ssh_username            = "ubuntu"
-  associate_public_ip_address = true
+  ami_name                      = local.ami_name
+  ami_description               = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
+
+  ssh_username                  = "ubuntu"
+  associate_public_ip_address   = true
+  ssh_timeout                   = "20m"   # more robust after reboot
+
   launch_block_device_mappings {
-    device_name           = "/dev/sda1"
-    volume_size           = var.root_volume_size
-    volume_type           = "gp2"
-    delete_on_termination = true
+    device_name                 = "/dev/sda1"
+    volume_size                 = var.root_volume_size
+    volume_type                 = "gp3"
+    delete_on_termination       = true
   }
-  tags = {
-    Name = var.ami_name
-  }
+
+  force_deregister              = true           # rebuild idempotent
+  force_delete_snapshot         = true
+
+  tags                          = local.common_tags
+  snapshot_tags                 = local.common_tags
 }
 
 build {
   name    = "ubuntu-ufw-lts"
-  sources = ["source.amazon-ebs.ubuntu_base_for_redis_enteprise"]
+  sources = ["source.amazon-ebs.ubuntu_base_for_redis_enterprise"]
 
   post-processor "manifest" {
-    output      = "manifest.json"
-    strip_path  = true
+    output     = "manifest.json"
+    strip_path = true
   }
-  
+
   provisioner "file" {
     source      = "../image_scripts/prepare-redis-install.sh"
     destination = "/home/ubuntu/prepare-redis-install.sh"
@@ -101,54 +91,47 @@ build {
   }
 
   provisioner "file" {
-    source      = "../image_scripts/redis-install-answsers.txt"
-    destination = "/home/ubuntu/redis-install-answsers.txt"
+    source      = "../image_scripts/redis-install-answers.txt" # corrige la coquille
+    destination = "/home/ubuntu/redis-install-answers.txt"
   }
 
   provisioner "file" {
-    source      = "../redis-software/${var.redis_tarball_name}"
+    source      = "../redis-software/${local.redis_tarball_name}"
     destination = "/home/ubuntu/redis-enterprise.tar"
   }
 
   provisioner "shell" {
-    environment_vars = [
-      "DEBIAN_FRONTEND=noninteractive"
-    ]
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+    inline_shebang   = "/bin/bash -eux"
     inline = [
+      "set -euxo pipefail",
       "chmod +x /home/ubuntu/prepare-redis-install.sh",
-      "DEBIAN_FRONTEND=noninteractive sudo -E /home/ubuntu/prepare-redis-install.sh"
+      "sudo -E /home/ubuntu/prepare-redis-install.sh"
     ]
   }
 
   provisioner "shell" {
+    inline_shebang   = "/bin/bash -eux"
     inline = [
-      # On prévoit un délai avant le reboot pour laisser le temps
-      "echo 'sleep 10'",
-      "sleep 10",
-      # On déclenche le reboot
-      "echo '###################################################################################'",
-      "echo '# Rebooting the instance to apply changes...'",
-      "echo '###################################################################################'",
+      "echo 'sleep 10'; sleep 10",
+      "echo '### Rebooting instance...'",
       "sudo reboot"
     ]
-    # Packer verra la déconnexion comme normale
     expect_disconnect = true
   }
 
-
-    provisioner "shell" {
-    environment_vars = [
-      "DEBIAN_FRONTEND=noninteractive"
-    ]
-    pause_before = "30s"
+  provisioner "shell" {
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+    pause_before     = "60s"
+    inline_shebang   = "/bin/bash -eux"
     inline = [
+      "set -euxo pipefail",
       "chmod +x /home/ubuntu/install-redis.sh",
-      "DEBIAN_FRONTEND=noninteractive sudo -E /home/ubuntu/install-redis.sh"
+      "sudo -E /home/ubuntu/install-redis.sh"
     ]
   }
-
-
 }
+
 # DEBIAN_FRONTEND=noninteractive sudo -E 
 # is to fix the following warning/error :
 #==> ubuntu-ufw-lts.amazon-ebs.ubuntu_base_for_redis_enteprise: debconf: unable to initialize frontend: Dialog
