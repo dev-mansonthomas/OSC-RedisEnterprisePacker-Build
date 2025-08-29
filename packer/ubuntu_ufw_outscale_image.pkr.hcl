@@ -1,21 +1,31 @@
 packer {
   required_plugins {
-    amazon = {
-      source  = "github.com/hashicorp/amazon"
-      version = "~> 1.0"
+    outscale = {
+      version = ">= 1.0.0"
+      source  = "github.com/outscale/outscale"
     }
   }
   required_version = ">= 1.7.0, < 2.0.0"
 }
 
+variable "keypair_name" {
+  type    = string
+  default = "outscale-tmanson-keypair"
+}
+
+variable "keypair_private_file" {
+  type    = string
+  default = "~/.ssh/outscale-tmanson-keypair.rsa"
+}
+
 variable "region" {
   type    = string
-  default = "eu-west-3"
+  default = "eu-west-2"
 }
 
 variable "build_instance_type" {
   type    = string
-  default = "t3.large"
+  default = "c4.large" # 2vCPU / 4GB of RAM (cheap instance for dev purpose) https://docs.outscale.com/fr/userguide/Types-de-VM.html
 }
 
 variable "root_volume_size" {
@@ -23,9 +33,9 @@ variable "root_volume_size" {
   default = 30
 }
 
-variable "source_ami" {
+variable "source_omi" {
   type    = string
-  default = "ami-007c433663055a1cc" # Ubuntu 22.04 LTS in eu-west-3
+  default = "ami-054f16b1" # Ubuntu 22.04 LTS in eu-west-2 Outscale | https://docs.outscale.com/fr/userguide/Ubuntu-22.04-2025.07.07.html
 }
 
 variable "redis_version" {
@@ -46,23 +56,29 @@ locals {
   }
 }
 
-source "amazon-ebs" "ubuntu_base_for_redis_enterprise" {
+source "outscale-bsu" "ubuntu_base_for_redis_enterprise" {
   region                        = var.region
-  instance_type                 = var.build_instance_type
-  source_ami                    = var.source_ami
+  vm_type                       = var.build_instance_type
+  
+  source_omi                    = var.source_omi
 
-  ami_name                      = local.ami_name
-  ami_description               = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
+  omi_name                      = local.ami_name
+  omi_description               = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
 
   ssh_username                  = "ubuntu"
-  associate_public_ip_address   = true
+  communicator                  = "ssh"
+  ssh_interface                 = "public_ip"
+  ssh_keypair_name              = var.keypair_name
+  //todo generate & register keypair
+  ssh_private_key_file          = var.keypair_private_file
+
   ssh_timeout                   = "20m"   # more robust after reboot
 
   launch_block_device_mappings {
     device_name                 = "/dev/sda1"
     volume_size                 = var.root_volume_size
     volume_type                 = "gp3"
-    delete_on_termination       = true
+    delete_on_vm_deletion       = true
   }
 
   force_deregister              = true           # rebuild idempotent
@@ -74,7 +90,7 @@ source "amazon-ebs" "ubuntu_base_for_redis_enterprise" {
 
 build {
   name    = "ubuntu-ufw-lts"
-  sources = ["source.amazon-ebs.ubuntu_base_for_redis_enterprise"]
+  sources = ["source.outscale-bsu.ubuntu_base_for_redis_enterprise"]
 
   post-processor "manifest" {
     output     = "manifest.json"

@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-HCL_FILE=../packer/ubuntu_ufw_aws_image.pkr.hcl
+source "$(dirname "$0")/../_my_env.sh"
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <aws|outscale> [-debug]"
+  exit 1
+fi
+
+PROVIDER=$1
+shift  # consomme le premier argument (provider)
+
+case "$PROVIDER" in
+  aws)
+    HCL_FILE=../packer/ubuntu_ufw_aws_image.pkr.hcl
+    ;;
+  outscale)
+    HCL_FILE=../packer/ubuntu_ufw_outscale_image.pkr.hcl
+    ;;
+  *)
+    echo "Erreur: provider inconnu '$PROVIDER' (attendu: aws ou outscale)"
+    exit 1
+    ;;
+esac
+
 MANIFEST_FILE=./manifest.json
 
 # Parse optional -debug flag to enable Packer debug mode
@@ -11,7 +34,7 @@ fi
 
 packer init     $HCL_FILE
 packer validate $HCL_FILE
-packer build    $BUILD_OPTS $HCL_FILE
+#packer build    -var "region=${REGION}" $BUILD_OPTS $HCL_FILE
 
 # Extract AMI ID from manifest.json
 if [[ -f "$MANIFEST_FILE" ]]; then

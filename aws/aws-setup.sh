@@ -3,7 +3,6 @@ set -euo pipefail
 
 source "$(dirname "$0")/../_my_env.sh"
 
-REGION="eu-west-3"
 NAME="${OWNER}-vpc"
 
 # Create VPC

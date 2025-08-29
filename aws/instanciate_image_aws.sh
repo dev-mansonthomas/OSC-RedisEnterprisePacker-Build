@@ -2,28 +2,67 @@
 source "$(dirname "$0")/../_my_env.sh"
 
 
-SUBNET_IDX="$1"
-MACHINE_TYPE="$2"
-FLEX_FLAG="${3:-}"
-FLEX_SIZE_GB="${4:-}"
+# Valeurs par défaut
+SUBNET_IDX=""
+MACHINE_TYPE="t3.xlarge"
+FLEX_FLAG=""
+FLEX_SIZE_GB=""
 
-if [[ -z "$MACHINE_TYPE" ]]; then
-  MACHINE_TYPE="t3.xlarge"
-fi
+usage() {
+  cat <<EOF
+Usage: $0 --subnet <index> [--machine-type <type>] [--flex <sizeGB>]
 
+Options:
+  --subnet <index>        (obligatoire) index du subnet (1, 2, 3)
+  --machine-type <type>   (optionnel) type d'instance, défaut: t3.xlarge
+  --flex <sizeGB>         (optionnel) active mode "flex" avec taille disque en Go
+
+Exemples:
+  $0 --subnet 1
+  $0 --subnet 2 --machine-type t3.large
+  $0 --subnet 3 --machine-type m5.xlarge --flex 200
+EOF
+}
+
+# --- Parsing des arguments nommés ---
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --subnet)
+      SUBNET_IDX="$2"
+      shift 2
+      ;;
+    --machine-type)
+      MACHINE_TYPE="$2"
+      shift 2
+      ;;
+    --flex)
+      FLEX_FLAG="flex"
+      FLEX_SIZE_GB="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Argument inconnu: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+# Validation des paramètres
 if [[ -z "$SUBNET_IDX" ]]; then
-  echo "Usage: $0 <subnet-index>"
+  echo "Erreur: --subnet <index> est obligatoire."
+  usage
   exit 1
 fi
 
-if [[ "$FLEX_FLAG" == "flex" ]]; then
-  flex=1
-  if [[ -z "$FLEX_SIZE_GB" ]]; then
-    echo "Usage: $0 <subnet-index> <machine-type> flex <disk-size-gb>"
-    exit 1
-  fi
-else
-  flex=0
+if [[ "$FLEX_FLAG" == "flex" && -z "$FLEX_SIZE_GB" ]]; then
+  echo "Erreur: --flex nécessite une taille (Go)."
+  usage
+  exit 1
 fi
 set -euo pipefail
 
@@ -34,16 +73,14 @@ SUBNET_ID_VAR="SUBNET${SUBNET_IDX}"
 SUBNET_ID="${!SUBNET_ID_VAR}"
 INSTANCE_NAME="redis-node-${SUBNET_IDX}"
 
-if [[ $flex -eq 1 ]]; then
-  echo "Flex mode enabled. Will attach two ${FLEX_SIZE_GB}GB SSD volumes."
-fi
 
 if [[ -z "$AMI_ID" ]]; then echo "AMI_ID is not set"; exit 1; fi
 if [[ -z "$KEY_NAME" ]]; then echo "KEY_NAME is not set"; exit 1; fi
 if [[ -z "$SECURITY_GROUP_ID" ]]; then echo "SECURITY_GROUP_ID is not set"; exit 1; fi
 if [[ -z "$SUBNET_ID" ]]; then echo "${SUBNET_ID_VAR} is not set"; exit 1; fi
 
-if [[ $flex -eq 1 ]]; then
+
+if [[ "$FLEX_FLAG" == "flex" ]]; then
   BLOCK_DEVICE_MAPPINGS="--block-device-mappings \
   DeviceName=/dev/sdf,Ebs={VolumeSize=${FLEX_SIZE_GB},VolumeType=gp3,DeleteOnTermination=true} \
   DeviceName=/dev/sdg,Ebs={VolumeSize=${FLEX_SIZE_GB},VolumeType=gp3,DeleteOnTermination=true}"

@@ -45,3 +45,4 @@ build_scripts/ec2_ubuntu_base_for_redis_enteprise.pem
 .gitignore
 .DS_Store
 _my_env.sh
+aws/setup-aws-output.txt

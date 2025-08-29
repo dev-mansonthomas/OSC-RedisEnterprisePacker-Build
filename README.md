@@ -1,15 +1,21 @@
-# Redis Enterprise Packer Images on AWS
+# Redis Enterprise Packer Images on AWS.
 
-This project builds AWS AMIs for Redis Enterprise using [Packer](https://www.packer.io/) and automates the setup and teardown of the required AWS infrastructure.
+This project builds AWS/Outscale AMIs for Redis Enterprise using [Packer](https://www.packer.io/) and automates the setup and teardown of the required AWS/Outscale infrastructure.
+Note : it's to either setup AWS or Outscale, there's no interconnexion between the two installation. 
 
 ## Requirements
 
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (configured and authenticated)
+- AWS or Outscale Account
 - [Packer](https://www.packer.io/downloads)
 - [jq](https://stedolan.github.io/jq/) (for parsing JSON in shell scripts)
 - Bash shell (tested on Linux/macOS)
 - Registered AWS key pair (for SSH access)
 - Sufficient AWS permissions to create/delete VPCs, subnets, route tables, security groups, EC2 instances, and AMIs
+- A Domain Name where you can customize DNS entries (Add IN NS statements)
+- Tested with BASH 5.x
+
+## Initial Setup
 
 ### Install Packer
 
@@ -18,7 +24,100 @@ brew tap hashicorp/tap
 brew install hashicorp/tap/packer
 ```
 
-### AWS Credentials Setup
+### Outscale Setup
+
+1. **OSC-CLI installation**
+
+If you're using Homebrew : 
+
+```sh
+brew tap outscale/tap
+brew install outscale/tap/oapi-cli
+```
+or check other installation methods here : [Github OAPI-CLI](https://github.com/outscale/oapi-cli) 
+
+2. **Authentication Configuration**
+
+Add the following keys and values in your shell profile for packer
+
+```sh
+export OSC_ACCESS_KEY=...
+export OSC_SECRET_KEY=...
+```
+
+and create `~/.osc/config.json`file with the following content :
+
+```json
+{
+  "default": {
+    "access_key": "ACCESSKEY",
+    "secret_key": "SECRETKEY",
+    "region": "eu-west-2"
+  }
+}
+```
+
+3. **Generate a SSH key pair for outscale**
+
+```sh
+oapi-cli --profile default CreateKeypair \
+  --KeypairName "outscale-tmanson-keypair"
+```
+
+```json
+{
+  "ResponseContext": {
+    "RequestId": "0475ca1e-d0c5-441d-712a-da55a4175157"
+  },
+  "Keypair": {
+    "PrivateKey": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
+    "KeypairType": "ssh-rsa",
+    "KeypairName": "outscale-tmanson-keypair",
+    "KeypairId": "key-abcdef1234567890abcdef1234567890",
+    "KeypairFingerprint": "11:22:33:44:55:66:77:88:99:00:aa:bb:cc:dd:ee:ff"
+  }
+}
+```
+
+Save the `PrivateKey` value in a file `~/.ssh/outscale-tmanson-keypair.rsa` and `chmod 600 ~/.ssh/outscale-tmanson-keypair.rsa`
+
+4. **Create DNS Zone in Outscale**
+```sh
+oapi-cli --profile default CreateDnsZone \
+  --ZoneName "outscale.paquerette.com" \
+  --CallerReference "$(date +%s)" \
+  --PrivateZone false
+```
+
+Output should be like : 
+
+```json 
+{
+  "DnsZone": {
+    "ZoneName": "outscale.paquerette.com",
+    "Id": "Z1234567890",
+    "NameServers": [
+      "ns-123.outscale.com",
+      "ns-456.outscale.com"
+    ]
+  }
+}
+```
+
+Edit your domaine (here `paquerette.com`) and add the following NS records : 
+
+```
+outscale IN NS ns-123.outscale.com.
+outscale IN NS ns-456.outscale.com.
+```
+
+4. **Install outscale packer plugin**
+
+```sh
+
+
+
+### AWS Setup
 
 1. **Create a Service Account (IAM User) in AWS Console:**
    - Go to IAM > Users > Add user
@@ -114,6 +213,9 @@ to `_my_env.sh`
 
 
 ## Usage
+
+Note: if you run multiple time `aws-setup.sh` / `teardown-aws-vpc.sh` / `build_and_deploy_image_with_packer.sh`, remove from `_my_env.sh` the generated values.
+If you only rerun `aws-setup.sh` without rebuilding the AMI, keep the `AMI_ID` in the `_my_env.sh`
 
 Run the following scripts in order from the project root:
 
