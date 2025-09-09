@@ -16,4 +16,4 @@ if [[ -z "$PUBLIC_IP" ]]; then
   exit 1
 fi
 
-ssh -i ~/.ssh/id_ed25519 ubuntu@"$PUBLIC_IP"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 ubuntu@"$PUBLIC_IP"

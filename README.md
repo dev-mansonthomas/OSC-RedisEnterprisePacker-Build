@@ -108,7 +108,14 @@ In vi you can do this with
 :%s/\\n/\r/g
 ```
 
+4. **Choose your Redis Cluster FQDN**
 
+  Let's say you own `paquerette.com` domain, and want to use `outscale.paquerette.com` for the Redis Cluster
+
+Add the following line
+`CLUSTER_DNS=aws.paquerette.com`
+to 
+`_my_env.sh`
 
 
 ### AWS Setup
@@ -151,59 +158,14 @@ aws ec2 import-key-pair \
 Add the `KEY-NAME` value (ex: tmanson-aws-key) in `_my_env.sh`
 `KEY_NAME=tmanson-aws-key`
 
-4. **Configure your DNS server**
+4. **Choose your Redis Cluster FQDN**
 
-    Let's say you own `paquerette.com` domain, and want to use `aws.paquerette.com` for the Redis Cluster
+  Let's say you own `paquerette.com` domain, and want to use `aws.paquerette.com` for the Redis Cluster
 
-```sh
-aws route53 create-hosted-zone \
-  --name aws.paquerette.com \
-  --caller-reference "$(date +%s)" \
-  --hosted-zone-config Comment="Sous-domaine pour Redis AWS",PrivateZone=false
-```
-
-Edit your domaine (here `paquerette.com`) and add the following NS records : 
-
-```
-aws 10800 IN NS ns-xx.awsdns-04.net.
-aws 10800 IN NS ns-yy.awsdns-34.org.
-aws 10800 IN NS ns-zz.awsdns-40.com.
-aws 10800 IN NS ns-ww.awsdns-10.co.uk.
-```
-
-Ensure, the delegation of aws.paquerette.com is effective using dig : 
-
-```sh
-dig NS aws.paquerette.Com
-
-; <<>> DiG 9.10.6 <<>> NS aws.paquerette.Com
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 63644
-;; flags: qr rd ra; QUERY: 1, ANSWER: 4, AUTHORITY: 0, ADDITIONAL: 1
-
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 1232
-;; QUESTION SECTION:
-;aws.paquerette.Com.		IN	NS
-
-;; ANSWER SECTION:
-aws.paquerette.Com.	86400	IN	NS	ns-yy.awsdns-34.org.
-aws.paquerette.Com.	86400	IN	NS	ns-ww.awsdns-10.co.uk.
-aws.paquerette.Com.	86400	IN	NS	ns-zz.awsdns-40.Com.
-aws.paquerette.Com.	86400	IN	NS	ns-xx.awsdns-04.net.
-
-;; Query time: 31 msec
-;; SERVER: 192.168.1.254#53(192.168.1.254)
-;; WHEN: Fri Jun 13 13:48:16 CEST 2025
-;; MSG SIZE  rcvd: 184
-```
-
-add 
-
+Add the following line
 `CLUSTER_DNS=aws.paquerette.com`
-
-to `_my_env.sh`
+to 
+`_my_env.sh`
 
 
 ## Usage
@@ -211,19 +173,44 @@ to `_my_env.sh`
 Note: if you run multiple time `aws-setup.sh` / `teardown-aws-vpc.sh` / `build_and_deploy_image_with_packer.sh`, remove from `_my_env.sh` the generated values.
 If you only rerun `aws-setup.sh` without rebuilding the AMI, keep the `AMI_ID` in the `_my_env.sh`
 
+0. **Ensure your _my_env.sh has all required variables set**
+
+```sh
+REDIS_LOGIN=adm@redis.io
+REDIS_PWD=redis_adm
+OWNER="thomas-manson"
+KEY_NAME=tmanson-aws-key
+CLUSTER_DNS=aws.paquerette.com #for AWS
+REGION=eu-west-3 # for AWS
+#for outscale
+OUTSCALE_CLUSTER_DNS=outscale.paquerette.com
+OUTSCALE_REGION=eu-west-2
+OUTSCALE_SSH_KEY="$HOME/.ssh/outscale-tmanson-keypair.rsa"
+```
+
 Run the following scripts in order from the project root:
 
-1. **Provision AWS Infrastructure:**
+1. **Provision the Infrastructure:**
+
+  if you're using aws : 
 
    ```sh
    cd aws/
    ./aws-setup.sh
    ```
 
+  if you're using Outscale :
+
+   ```sh
+   cd osc/
+   ./osc-setup.sh
+   ```
+
+
    This will append the following variables to `_my_env.sh` with the various IDs generated during the setup of the VPC
 
    ```sh
-   VPC_ID=vpc-xxx
+   VPC_ID=vpc-xxx # or NET_ID=vpc-yyyyy for outscale
    IGW_ID=igw-xxx
    RTB_ID=rtb-xxx
    SG_ID=sg-xxx
@@ -237,18 +224,33 @@ Run the following scripts in order from the project root:
 
 2. **Build and Deploy the Packer Image:**
 
+  **AWS**
+
    ```sh
    cd build_scripts/
-   ./build_and_deploy_image_with_packer.sh
+   ./build_and_deploy_image_with_packer.sh aws
    ```
 
    This will append the AMI_ID  to `_my_env.sh`
    ```sh
-   AMI_ID=ami-0bc191cbbc5e8392d
+   AMI_ID=ami-xyzxyzxyz
+   ```
+  **Outscale**
+
+   ```sh
+   cd build_scripts/
+   ./build_and_deploy_image_with_packer.sh outscale
+   ```
+
+   This will append the AMI_ID  to `_my_env.sh`
+   ```sh
+   OUTSCALE_AMI_ID=ami-xyzxyzxyz
    ```
 
 
 3. **Instantiate an EC2 Instance from the Built Image:**
+
+  **AWS**
 
    ```sh
    cd aws/
@@ -262,7 +264,52 @@ Run the following scripts in order from the project root:
    INSTANCE_PUBLIC_IP_3=51.44.4.244 #i-0fe563086da4d41df
    ```
 
-4. **Connect to Your Instance:**
+   **Outscale**
+
+   ```sh
+   cd osc/
+   my_instanciate_outscale.sh
+   ```
+
+   This will append the following variables to `_my_env.sh` with the various IDs generated during the setup of the VPC
+   ```sh
+   OUTSCALE_INSTANCE_PUBLIC_IP_1=13.38.11.137 #i-0f3731bccbefe8256
+   OUTSCALE_INSTANCE_PUBLIC_IP_2=51.44.42.52 #i-0570bff1ec77d91bf
+   OUTSCALE_INSTANCE_PUBLIC_IP_3=51.44.4.244 #i-0fe563086da4d41df
+   ```
+
+4. **Configure your DNS Zone**
+
+  Edit your DNS zone with the output of the script my_instaciate.sh / my_instanciate_outscale.sh
+
+example : 
+```
+###############################################################################################
+ns1.outscale.paquerette.com. 10800 IN A 171.33.65.166
+ns2.outscale.paquerette.com. 10800 IN A 171.33.82.31
+ns3.outscale.paquerette.com. 10800 IN A 171.33.83.16
+
+outscale.paquerette.com. 10800 IN A 171.33.65.166
+outscale.paquerette.com. 10800 IN A 171.33.82.31
+outscale.paquerette.com. 10800 IN A 171.33.83.16
+
+outscale.paquerette.com. 10800 IN NS ns1.outscale.paquerette.com.
+outscale.paquerette.com. 10800 IN NS ns2.outscale.paquerette.com.
+outscale.paquerette.com. 10800 IN NS ns3.outscale.paquerette.com.
+###############################################################################################
+
+Cluster setup complete. Access your cluster at https://outscale.paquerette.com:8443 with username adm@redis.io and password redis_adm.
+```
+
+5. **Connect to the Redis Cluster Manager:**
+
+  After having configured the DNS zone, click on the URL displayed at the end of the my_instanciate*.sh script, enter the login & password.
+  
+  Check the Cluster Tab, and Nodes Tab to see that all 3 nodes are there.
+  Then create a simple DB and test that you can connect to it using the generated FQDN (ex: redis-12000.outscale.paquerette.com:12000 for a DB using port 12000)
+
+
+6. **Connect to Your Instance:**
 
    ```sh
    cd aws/
@@ -298,3 +345,53 @@ TODO : https://redis.io/docs/latest/operate/rs/references/cli-utilities/rladmin/
 * internal vs external ip  : https://redis.io/docs/latest/operate/rs/networking/multi-ip-ipv6/
 * rackzone awarness: https://redis.io/docs/latest/operate/rs/clusters/configure/rack-zone-awareness/
 
+
+# Annexe
+
+## Outscale & AWS CLI
+
+If you want to use the aws CLI with outscale without messing up your current aws cli setup do as follow.
+Note that not all aws cli is supported even for EC2 instance creation.
+It's preferrable to use `oapi-cli` 
+
+`cd ~/.aws/`
+
+`vi ~/.aws/credentials`
+```sh
+[outscale]
+aws_access_key_id = TON_ACCESS_KEY
+aws_secret_access_key = TON_SECRET_KEY
+```
+
+`vi ~/.aws/config`
+```sh
+[profile outscale]
+region = eu-west-2
+output = json
+cli_pager=
+```
+
+mkdir ~/.aws/outscale-models/
+vi ~/.aws/outscale-models/endpoints.json
+
+paste the content listed here : https://docs.outscale.com/fr/userguide/Installer-et-configurer-AWS-CLI.html#_configurer_lattribut_endpoint
+
+Create a wrapper 
+
+`sudo vi /usr/local/bin/aws-osc`
+
+```sh
+#!/usr/bin/env bash
+
+# ===========================
+# Outscale
+# ===========================
+exec env \
+  AWS_PROFILE=outscale \
+  AWS_DATA_PATH="$HOME/.aws/outscale-models" \
+  aws "$@"
+```
+
+`sudo chmod 755 /usr/local/bin/aws-osc`
+
+now instead of use `aws`, use `aws-osc` in your script. 

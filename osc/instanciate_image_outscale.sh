@@ -92,6 +92,7 @@ SUBNET_ID="${!SUBNET_ID_VAR}"
 AZ_ID_VAR="AZ${SUBNET_IDX}"
 AZ="${!AZ_ID_VAR}"
 INSTANCE_NAME="redis-node-${SUBNET_IDX}"
+OAPI_PROFILE="default"
 
 if [[ -z "$AMI_ID" ]]; then echo "Erreur: OUTSCALE_AMI_ID n'est pas défini"; exit 1; fi
 if [[ -z "$KEY_NAME" ]]; then echo "Erreur: KEY_NAME n'est pas défini"; exit 1; fi
@@ -110,33 +111,28 @@ fi
 #--region "$OUTSCALE_REGION" 
 #$BLOCK_DEVICE_MAPPINGS \
 
-INSTANCE_ID=$(aws-osc ec2 run-instances \
-  --image-id "$OUTSCALE_AMI_ID" \
-  --count 1 \
-  --instance-type "$MACHINE_TYPE" \
-  --key-name "outscale-tmanson-keypair" \
-  --subnet-id "$SUBNET_ID" \
-  --associate-public-ip-address \
-  --placement "{\"AvailabilityZone\":\"$AZ\", \"Tenancy\":\"default\"}" \
-  --tag-specifications \
-    "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME}]" \
-    "ResourceType=volume,Tags=[{Key=Name,Value=$INSTANCE_NAME}]" \
-  --security-group-ids "$SG_ID" \
-  --query 'Instances[0].InstanceId' \
-  --output text)
+VM_JSON=$(oapi-cli --profile "$OAPI_PROFILE" CreateVms \
+  --ImageId "$OUTSCALE_AMI_ID" \
+  --VmType "$MACHINE_TYPE" \
+  --KeypairName "outscale-tmanson-keypair" \
+  --SubnetId "$SUBNET_ID" \
+  --Placement '{"Tenancy":"default","SubregionName":"'"$AZ"'"}' \
+  --SecurityGroupIds '["'"$SG_ID"'"]')
 
+echo "VM JSON Response: 
+##########################
+$VM_JSON
+##########################
+"
+
+INSTANCE_ID=$(echo "$VM_JSON" | jq -r '.Vms[0].VmId')
 echo "Instance ID: $INSTANCE_ID"
 
-# Pause pour laisser le temps à l'IP publique d'être assignée
-sleep 5
+PUBLIC_IP=$(echo "$VM_JSON" | jq -r '.Vms[0].PublicIp')
+VOLUME_ID=$(echo "$VM_JSON" | jq -r '.Vms[0].BlockDeviceMappings[].Bsu.VolumeId')
 
-PUBLIC_IP=$(aws-osc ec2 describe-instances \
-  --instance-ids "$INSTANCE_ID" \
-  --region "$OUTSCALE_REGION" \
-  --query 'Reservations[0].Instances[0].PublicIpAddress' \
-  --output text)
-
-echo "Public IP: $PUBLIC_IP"
+echo "Allocated Public IP: $PUBLIC_IP"
+echo "Allocated Volume IDs: $VOLUME_ID"
 echo "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@$PUBLIC_IP"
 
 echo "Waiting for instance $INSTANCE_ID to pass status checks..."
@@ -153,32 +149,11 @@ done
 echo "Instance $INSTANCE_ID is now running."
 
 
-BOOT_VOL_ID=$(
-  oapi-cli ReadVms --Filters "{\"VmIds\":[\"${INSTANCE_ID}\"]}" \
-  | jq -r '.Vms[0].BlockDeviceMappings[]
-           | select(.DeviceName == "/dev/sda1")
-           | .Bsu.VolumeId'
-)
+# Ex: taguer les volumes de la VM
+oapi-cli --profile "$OAPI_PROFILE" CreateTags \
+--ResourceIds '["'"$INSTANCE_ID"'"]' \
+--Tags '[{"Key":"Name","Value":"'"$INSTANCE_NAME"'"}]'
 
-if [[ -z "$BOOT_VOL_ID" || "$BOOT_VOL_ID" == "null" ]]; then
-  echo "Impossible de trouver le volume root (/dev/sda1) pour $INSTANCE_ID" >&2
-  exit 1
-fi
-
-echo "Volume racine: $BOOT_VOL_ID"
-
-app="redis-"
-name="01"
-tag="[$app][$name]"
-echo "Tagging instance as $tag"
-
-# Construire le JSON des tags et l’appliquer
-TAGS_JSON=$(jq -n --arg name "$INSTANCE_NAME" "[{Key:\"Name\", Value:\"$tag\"}]")
-echo "Tags JSON: $TAGS_JSON"
-set +x
-oapi-cli CreateTags \
-  --ResourceIds "[\"${BOOT_VOL_ID}\"]" \
-  --Tags "$TAGS_JSON"
 
 echo "Sleeping 30 seconds to let the instance initialize..."
 sleep 30

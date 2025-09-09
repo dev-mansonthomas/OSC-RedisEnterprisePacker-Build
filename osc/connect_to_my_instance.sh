@@ -8,7 +8,7 @@ fi
 
 source "$(dirname "$0")/../_my_env.sh"
 
-PUBLIC_IP_VAR="INSTANCE_PUBLIC_IP_${SUBNET_IDX}"
+PUBLIC_IP_VAR="OUTSCALE_INSTANCE_PUBLIC_IP_${SUBNET_IDX}"
 PUBLIC_IP="${!PUBLIC_IP_VAR}"
 
 if [[ -z "$PUBLIC_IP" ]]; then
@@ -16,4 +16,4 @@ if [[ -z "$PUBLIC_IP" ]]; then
   exit 1
 fi
 
-ssh -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@"$PUBLIC_IP"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@"$PUBLIC_IP"

@@ -66,4 +66,23 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@"${INSTAN
   sudo /home/ubuntu/create-or-join-redis-cluster.sh "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "$INSTANCE_PUBLIC_IP_3" "$zone"  3 "$master_ip"
 EOF
 
-echo "Cluster setup complete. Access your cluster at https://$cluster_dns:8443 with username $RS_admin and password $RS_password."
+
+echo "
+Confiure your DNS with the following entries:
+###############################################################################################
+ns1.${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_1}
+ns2.${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_2}
+ns3.${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_3}
+
+${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_1}
+${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_2}
+${CLUSTER_DNS}. 10800 IN A ${INSTANCE_PUBLIC_IP_3}
+
+${CLUSTER_DNS}. 10800 IN NS ns1.${CLUSTER_DNS}.
+${CLUSTER_DNS}. 10800 IN NS ns2.${CLUSTER_DNS}.
+${CLUSTER_DNS}. 10800 IN NS ns3.${CLUSTER_DNS}.
+###############################################################################################
+
+"
+
+echo "Cluster setup complete. Access your cluster at https://$CLUSTER_DNS:8443 with username $RS_admin and password $RS_password."

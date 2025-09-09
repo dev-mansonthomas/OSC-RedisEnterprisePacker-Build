@@ -73,4 +73,23 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outsca
   sudo /home/outscale/create-or-join-redis-cluster.sh "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "$OUTSCALE_INSTANCE_PUBLIC_IP_3" "$zone"  3 "$master_ip"
 EOF
 
+
+echo "
+Confiure your DNS with the following entries:
+###############################################################################################
+ns1.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_1}
+ns2.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_2}
+ns3.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_3}
+
+${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_1}
+${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_2}
+${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_3}
+
+${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns1.${OUTSCALE_CLUSTER_DNS}.
+${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns2.${OUTSCALE_CLUSTER_DNS}.
+${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns3.${OUTSCALE_CLUSTER_DNS}.
+###############################################################################################
+
+"
+
 echo "Cluster setup complete. Access your cluster at https://$cluster_dns:8443 with username $RS_admin and password $RS_password."
