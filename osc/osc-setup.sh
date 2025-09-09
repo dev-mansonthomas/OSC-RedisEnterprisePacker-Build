@@ -1,119 +1,171 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Pré-requis ---
-# - oapi-cli installé et configuré (~/.osc/config.json)   [oai_citation:0‡Outscale Documentation](https://docs.outscale.com/en/userguide/Installing-and-Configuring-oapi-cli.html)
+# Prérequis:
+# - oapi-cli installé et profil configuré (~/.osc/config.json)
 # - jq installé
-#
-# Utilisation :
-#   ./osc-setup.sh OWNER_NAME eu-west-2 [PROFILE]
-# Ex :
-#   ./osc-setup.sh thomas-manson eu-west-2 default
+# Docs install oapi-cli : https://docs.outscale.com/en/userguide/Installing-and-Configuring-oapi-cli.html
+
+# Usage: ./osc-setup.sh 
+# Ex:    ./osc-setup.sh 
 
 source "$(dirname "$0")/../_my_env.sh"
 
-OAPI_PROFILE="-default"
-
+OAPI_PROFILE="default"
+#REGION is not needed as the access key is bound to a specific region
+# It's used for subnet creation in specific AZs
+REGION="${OUTSCALE_REGION:-eu-west-2}"
 NAME="${OWNER}-net"
 
-# 1) Create Net (équiv. VPC)
-NET_ID=$(
-  oapi-cli --profile " CreateNet \
-    --IpRange "10.0.0.0/16" | jq -r '.Net.NetId'
-)
+pause() {
+  read -rp "Press any key to continue..." -n1
+  echo    # retour à la ligne après la touche
+}
+
+
+echo "Using profile=$OAPI_PROFILE region=$REGION owner=$OWNER"
+
+# 1) Create Net (équivalent VPC)
+NET_ID="$(
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateNet --IpRange "10.0.0.0/16" \
+  | jq -r '.Net.NetId'
+)"
 echo "Created Net: $NET_ID"
+pause
 
-# Tags (syntaxes alternatives supportées par oapi-cli)   [oai_citation:1‡Outscale Documentation](https://docs.outscale.com/en/userguide/Installing-and-Configuring-oapi-cli.html)
-oapi-cli --profile "$OAPI_PROFILE" CreateTags \
-  "--ResourceIds[]" "$NET_ID" \
-  --Tags.0.Key "Owner" ..Value "$OWNER" \
-  --Tags.1.Key "Name"  ..Value "$NAME"
+# Tagger le Net (CreateTags)
+oapi-cli --profile "$OAPI_PROFILE"  \
+  CreateTags \
+  --ResourceIds '["'"$NET_ID"'"]' \
+  --Tags '[{"Key":"Owner","Value":"'"$OWNER"'"},{"Key":"Name","Value":"'"$NAME"'"}]'
 
-# 2) Create Internet Service (équiv. IGW) + Link to Net   [oai_citation:2‡Outscale Documentation](https://docs.outscale.com/en/userguide/Creating-an-Internet-Service.html)
-IGW_ID=$(
-  oapi-cli --profile "$OAPI_PROFILE" CreateInternetService \
+pause
+
+
+# 2) Create Internet Service + Link to Net
+IGW_ID="$(
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateInternetService \
   | jq -r '.InternetService.InternetServiceId'
-)
+)"
 echo "Created Internet Service: $IGW_ID"
+pause
 
-oapi-cli --profile "$OAPI_PROFILE" LinkInternetService \
+
+oapi-cli --profile "$OAPI_PROFILE"  \
+  LinkInternetService \
   --NetId "$NET_ID" \
   --InternetServiceId "$IGW_ID"
 echo "Linked Internet Service to Net"
+pause
 
-# 3) Route table + default route to internet service   [oai_citation:3‡Outscale Documentation](https://docs.outscale.com/en/userguide/Creating-a-Route-Table.html)
-RTB_ID=$(
-  oapi-cli --profile "$OAPI_PROFILE" CreateRouteTable \
-    --NetId "$NET_ID" | jq -r '.RouteTable.RouteTableId'
-)
+
+# 3) Route table + default route to Internet Service
+RTB_ID="$(
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateRouteTable --NetId "$NET_ID" \
+  | jq -r '.RouteTable.RouteTableId'
+)"
 echo "Created Route Table: $RTB_ID"
+pause
 
-# La route Internet utilise GatewayId = InternetServiceId   [oai_citation:4‡Outscale Documentation](https://docs.outscale.com/en/userguide/Creating-a-Route-Table.html)
-oapi-cli --profile "$OAPI_PROFILE" CreateRoute \
+
+# CreateRoute 0.0.0.0/0 -> InternetService
+oapi-cli --profile "$OAPI_PROFILE"  \
+  CreateRoute \
   --RouteTableId "$RTB_ID" \
   --DestinationIpRange "0.0.0.0/0" \
   --GatewayId "$IGW_ID"
-echo "Created 0.0.0.0/0 route to Internet Service"
+echo "Created default route to Internet Service"
+pause
 
-# 4) 3 subnets publics (a, b, c) + association route table + IP publique auto   [oai_citation:5‡Outscale Documentation](https://docs.outscale.com/en/userguide/Creating-a-Subnet-in-a-Net.html)
+
+# 4) 3 Subnets publics (a, b, c) + association RT + IP publique auto
 declare -a SUBNET_IDS=()
 declare -a AZS=()
 for i in 1 2 3; do
   CIDR="10.0.$((i * 10)).0/24"
-  # Sous-régions : ${REGION}a / b / c (ex: eu-west-2a)
   SUFFIX=$(echo a b c | cut -d' ' -f$i)
   SUBREGION="${REGION}${SUFFIX}"
 
-  SUBNET_ID=$(
-    oapi-cli --profile "$OAPI_PROFILE" CreateSubnet \
+  SUBNET_ID="$(
+    oapi-cli --profile "$OAPI_PROFILE"  \
+      CreateSubnet \
       --NetId "$NET_ID" \
       --IpRange "$CIDR" \
       --SubregionName "$SUBREGION" \
     | jq -r '.Subnet.SubnetId'
-  )
+  )"
   echo "Created Subnet: $SUBNET_ID in ${SUBREGION}"
   SUBNET_IDS+=("$SUBNET_ID")
   AZS+=("$SUBREGION")
 
-  # Associer la route table au subnet
-  oapi-cli --profile "$OAPI_PROFILE" LinkRouteTable \
+  # Associer la route table
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    LinkRouteTable \
     --RouteTableId "$RTB_ID" \
     --SubnetId "$SUBNET_ID"
 
-  # Activer l’attribution d’IP publique automatique (équiv. map-public-ip-on-launch)   [oai_citation:6‡Outscale Documentation](https://docs.outscale.com/en/userguide/Modifying-a-Subnet-Attribute.html)
-  oapi-cli --profile "$OAPI_PROFILE" UpdateSubnet \
+  # Activer MapPublicIpOnLaunch
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    UpdateSubnet \
     --SubnetId "$SUBNET_ID" \
     --MapPublicIpOnLaunch true
 done
+pause
 
-# 5) Security Group + règles (Inbound/Outbound)
-# Création du SG   [oai_citation:7‡Outscale Documentation](https://docs.outscale.com/en/userguide/Creating-a-Security-Group.html)
-SG_ID=$(
-  oapi-cli --profile "$OAPI_PROFILE" CreateSecurityGroup \
+
+# 5) Security Group + règles
+SG_ID="$(
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateSecurityGroup \
     --NetId "$NET_ID" \
     --SecurityGroupName "${OWNER}-sg" \
     --Description "Security group for ${OWNER}" \
   | jq -r '.SecurityGroup.SecurityGroupId'
-)
+)"
 echo "Created Security Group: $SG_ID"
+pause
 
-# Inbound SSH from anywhere + ports externes (ex. Redis Enterprise UI/APIs)
-# Créer une règle = CreateSecurityGroupRule --Flow Inbound ...   [oai_citation:8‡Outscale Documentation](https://docs.outscale.com/en/userguide/Adding-Rules-to-a-Security-Group.html)
-oapi-cli --profile "$OAPI_PROFILE" CreateSecurityGroupRule \
+
+# Inbound SSH depuis Internet
+oapi-cli --profile "$OAPI_PROFILE"  \
+  CreateSecurityGroupRule \
   --Flow Inbound \
   --SecurityGroupId "$SG_ID" \
   --IpProtocol tcp --FromPortRange 22 --ToPortRange 22 \
   --IpRange "0.0.0.0/0"
+pause
 
+
+# Ports externes (UI / APIs Redis Enterprise)
 for port in 8001 8070 8080 3346 8443 9443; do
-  oapi-cli --profile "$OAPI_PROFILE" CreateSecurityGroupRule \
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateSecurityGroupRule \
     --Flow Inbound \
     --SecurityGroupId "$SG_ID" \
     --IpProtocol tcp --FromPortRange "$port" --ToPortRange "$port" \
     --IpRange "0.0.0.0/0"
 done
+pause
+# Plage de port externes
+for range in "10000-10049" "10051-19999"; do
+  from=$(echo $range | cut -d- -f1)
+  to=$(echo $range | cut -d- -f2)
 
-# Inbound internes (CIDR Net)
+  oapi-cli --profile "$OAPI_PROFILE" \
+    CreateSecurityGroupRule \
+    --Flow Inbound \
+    --SecurityGroupId "$SG_ID" \
+    --IpProtocol tcp \
+    --FromPortRange "$from" \
+    --ToPortRange "$to" \
+    --IpRange "0.0.0.0/0"
+done
+
+
+# Ports internes (CIDR du Net)
 for spec in \
   "tcp 8001 8001" "tcp 8002 8002" "tcp 8004 8004" "tcp 8006 8006" \
   "tcp 8071 8071" "tcp 8443 8443" "tcp 9080 9080" "tcp 9081 9081" \
@@ -124,23 +176,29 @@ for spec in \
   "tcp 3333 3345"  "tcp 3347 3349"  "tcp 3350 3354"
 do
   read -r proto from to <<<"$spec"
-  oapi-cli --profile "$OAPI_PROFILE" CreateSecurityGroupRule \
+  oapi-cli --profile "$OAPI_PROFILE"  \
+    CreateSecurityGroupRule \
     --Flow Inbound \
     --SecurityGroupId "$SG_ID" \
     --IpProtocol "$proto" --FromPortRange "$from" --ToPortRange "$to" \
     --IpRange "10.0.0.0/8"
 done
+pause
+
 
 # UDP 53/5353 externe et interne
 for cidr in "0.0.0.0/0" "10.0.0.0/8"; do
   for port in 53 5353; do
-    oapi-cli --profile "$OAPI_PROFILE" CreateSecurityGroupRule \
+    oapi-cli --profile "$OAPI_PROFILE"  \
+      CreateSecurityGroupRule \
       --Flow Inbound \
       --SecurityGroupId "$SG_ID" \
       --IpProtocol udp --FromPortRange "$port" --ToPortRange "$port" \
       --IpRange "$cidr"
   done
 done
+pause
+
 
 echo ""
 echo "===== OUTSCALE Resource Summary ====="

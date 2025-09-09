@@ -27,6 +27,7 @@ zone="$AZ1"
 source "$(dirname "$0")/../_my_env.sh"
 # Configure Redis cluster on the remote instance
 echo "Connecting to $INSTANCE_PUBLIC_IP_1 to configure cluster..."
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ../image_scripts/create-or-join-redis-cluster.sh outscale@"${INSTANCE_PUBLIC_IP_1}":/home/outscale/create-or-join-redis-cluster.sh
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@"${INSTANCE_PUBLIC_IP_1}" << EOF
   ${FLE_CMD:-true}
   chmod 700 /home/ubuntu/create-or-join-redis-cluster.sh
@@ -45,6 +46,7 @@ zone="$AZ2"
 
 # Configure Redis cluster on the remote instance
 echo "Connecting to $INSTANCE_PUBLIC_IP_2 to configure cluster..."
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ../image_scripts/create-or-join-redis-cluster.sh outscale@"${INSTANCE_PUBLIC_IP_2}":/home/outscale/create-or-join-redis-cluster.sh
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@"${INSTANCE_PUBLIC_IP_2}" << EOF
   ${FLE_CMD:-true}
   chmod 700 /home/ubuntu/create-or-join-redis-cluster.sh
@@ -57,6 +59,7 @@ zone="$AZ3"
 
 # Configure Redis cluster on the remote instance
 echo "Connecting to $INSTANCE_PUBLIC_IP_3 to configure cluster..."
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ../image_scripts/create-or-join-redis-cluster.sh outscale@"${INSTANCE_PUBLIC_IP_3}":/home/outscale/create-or-join-redis-cluster.sh
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@"${INSTANCE_PUBLIC_IP_3}" << EOF
   ${FLE_CMD:-true}
   chmod 700 /home/ubuntu/create-or-join-redis-cluster.sh

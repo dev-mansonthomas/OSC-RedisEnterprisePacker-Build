@@ -13,7 +13,7 @@ master_ip=$8   # seulement pour les secondaries
 
 
 
-set -euxo pipefail
+set -euo pipefail
 
 # Set internal IP-based hostname and update /etc/hosts
 internal_ip=$(ip -4 -o addr show | awk '!/ lo / {print $4}' | cut -d/ -f1 | grep '^10\.')

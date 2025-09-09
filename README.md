@@ -38,6 +38,9 @@ or check other installation methods here : [Github OAPI-CLI](https://github.com/
 
 2. **Authentication Configuration**
 
+Create a new Access Key ID in [Outscale Cockpit](https://cockpit.outscale.com/#/accesskeys)
+or Click on your username in the upper right corner of the screen and then click on Access Key.
+
 Add the following keys and values in your shell profile for packer
 
 ```sh
@@ -54,6 +57,22 @@ and create `~/.osc/config.json`file with the following content :
     "secret_key": "SECRETKEY",
     "region": "eu-west-2"
   }
+}
+```
+
+Validate that the authentication works by executing the "list VM" call : 
+
+```sh
+oapi-cli ReadVms
+```
+
+it should answer something similar to : 
+```json
+{
+  "ResponseContext":{
+    "RequestId":"a79c959b-c6c0-4087-b687-6b20f2dfc1a5"
+  },
+  "Vms":[]
 }
 ```
 
@@ -81,39 +100,14 @@ oapi-cli --profile default CreateKeypair \
 
 Save the `PrivateKey` value in a file `~/.ssh/outscale-tmanson-keypair.rsa` and `chmod 600 ~/.ssh/outscale-tmanson-keypair.rsa`
 
-4. **Create DNS Zone in Outscale**
-```sh
-oapi-cli --profile default CreateDnsZone \
-  --ZoneName "outscale.paquerette.com" \
-  --CallerReference "$(date +%s)" \
-  --PrivateZone false
-```
+Replace the \n by linefeed.
 
-Output should be like : 
-
-```json 
-{
-  "DnsZone": {
-    "ZoneName": "outscale.paquerette.com",
-    "Id": "Z1234567890",
-    "NameServers": [
-      "ns-123.outscale.com",
-      "ns-456.outscale.com"
-    ]
-  }
-}
-```
-
-Edit your domaine (here `paquerette.com`) and add the following NS records : 
+In vi you can do this with 
 
 ```
-outscale IN NS ns-123.outscale.com.
-outscale IN NS ns-456.outscale.com.
+:%s/\\n/\r/g
 ```
 
-4. **Install outscale packer plugin**
-
-```sh
 
 
 

@@ -82,13 +82,8 @@ build {
   }
 
   provisioner "file" {
-    source      = "../image_scripts/prepare-redis-install.sh"
-    destination = "/home/ubuntu/prepare-redis-install.sh"
-  }
-
-  provisioner "file" {
-    source      = "../image_scripts/install-redis.sh"
-    destination = "/home/ubuntu/install-redis.sh"
+    source      = "../image_scripts/prepare-and-install-redis-install.sh"
+    destination = "/home/ubuntu/prepare-and-install-redis-install.sh"
   }
 
   provisioner "file" {
@@ -106,29 +101,8 @@ build {
     inline_shebang   = "/bin/bash -eux"
     inline = [
       "set -euxo pipefail",
-      "chmod +x /home/ubuntu/prepare-redis-install.sh",
-      "sudo -E /home/ubuntu/prepare-redis-install.sh"
-    ]
-  }
-
-  provisioner "shell" {
-    inline_shebang   = "/bin/bash -eux"
-    inline = [
-      "echo 'sleep 10'; sleep 10",
-      "echo '### Rebooting instance...'",
-      "sudo reboot"
-    ]
-    expect_disconnect = true
-  }
-
-  provisioner "shell" {
-    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
-    pause_before     = "60s"
-    inline_shebang   = "/bin/bash -eux"
-    inline = [
-      "set -euxo pipefail",
-      "chmod +x /home/ubuntu/install-redis.sh",
-      "sudo -E /home/ubuntu/install-redis.sh"
+      "chmod +x /home/ubuntu/prepare-and-install-redis-install.sh",
+      "sudo -E /home/ubuntu/prepare-and-install-redis-install.sh"
     ]
   }
 }

@@ -125,4 +125,4 @@ echo "Instance $INSTANCE_ID is now running."
 
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519  ../image_scripts/create-or-join-redis-cluster.sh ubuntu@$PUBLIC_IP:/home/ubuntu/create-or-join-redis-cluster.sh
 
-echo -e "\nINSTANCE_PUBLIC_IP_${SUBNET_IDX}=${PUBLIC_IP} #${INSTANCE_ID}" >> "$(dirname "$0")/../_my_env.sh"
+echo -e "INSTANCE_PUBLIC_IP_${SUBNET_IDX}=${PUBLIC_IP} #${INSTANCE_ID}" >> "$(dirname "$0")/../_my_env.sh"

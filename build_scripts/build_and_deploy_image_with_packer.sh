@@ -10,13 +10,16 @@ fi
 
 PROVIDER=$1
 shift  # consomme le premier argument (provider)
+TARGET_REGION=""
 
 case "$PROVIDER" in
   aws)
     HCL_FILE=../packer/ubuntu_ufw_aws_image.pkr.hcl
+    TARGET_REGION="$REGION"
     ;;
   outscale)
     HCL_FILE=../packer/ubuntu_ufw_outscale_image.pkr.hcl
+    TARGET_REGION="$OUTSCALE_REGION"
     ;;
   *)
     echo "Erreur: provider inconnu '$PROVIDER' (attendu: aws ou outscale)"
@@ -34,13 +37,25 @@ fi
 
 packer init     $HCL_FILE
 packer validate $HCL_FILE
-#packer build    -var "region=${REGION}" $BUILD_OPTS $HCL_FILE
+
+PACKER_LOG=1 PACKER_LOG_PATH=packer.out \
+  packer build -var "region=${TARGET_REGION}" $BUILD_OPTS $HCL_FILE
 
 # Extract AMI ID from manifest.json
 if [[ -f "$MANIFEST_FILE" ]]; then
   AMI_ID=$(jq -r --arg uuid "$(jq -r '.last_run_uuid' "$MANIFEST_FILE")" '.builds[] | select(.packer_run_uuid == $uuid) | .artifact_id' "$MANIFEST_FILE" | cut -d':' -f2)
-  echo "AMI_ID=$AMI_ID"
-  echo "AMI_ID=$AMI_ID" >> ../_my_env.sh
+  case "$PROVIDER" in
+  aws)
+    echo "AMI_ID for AWS in region $TARGET_REGION: $AMI_ID"
+    echo -e "\nAMI_ID=$AMI_ID" >> ../_my_env.sh
+    ;;
+  outscale)
+    echo "OUTSCALE_AMI_ID for Outscale in region $TARGET_REGION: $AMI_ID"
+    echo -e "\nOUTSCALE_AMI_ID=$AMI_ID" >> ../_my_env.sh
+    ;;
+  esac
+  
+  
 else
   echo "manifest.json not found. AMI ID not extracted."
 fi

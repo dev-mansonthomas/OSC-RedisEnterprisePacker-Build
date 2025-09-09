@@ -15,7 +15,7 @@ variable "keypair_name" {
 
 variable "keypair_private_file" {
   type    = string
-  default = "~/.ssh/outscale-tmanson-keypair.rsa"
+  default = "/Users/thomas.manson/.ssh/outscale-tmanson-keypair.rsa"
 }
 
 variable "region" {
@@ -25,7 +25,7 @@ variable "region" {
 
 variable "build_instance_type" {
   type    = string
-  default = "c4.large" # 2vCPU / 4GB of RAM (cheap instance for dev purpose) https://docs.outscale.com/fr/userguide/Types-de-VM.html
+  default = "tinav5.c2r16p3" #c4.large 2vCPU / 4GB of RAM (cheap instance for dev purpose) https://docs.outscale.com/fr/userguide/Types-de-VM.html
 }
 
 variable "root_volume_size" {
@@ -65,7 +65,7 @@ source "outscale-bsu" "ubuntu_base_for_redis_enterprise" {
   omi_name                      = local.ami_name
   omi_description               = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
 
-  ssh_username                  = "ubuntu"
+  ssh_username                  = "outscale"
   communicator                  = "ssh"
   ssh_interface                 = "public_ip"
   ssh_keypair_name              = var.keypair_name
@@ -77,7 +77,7 @@ source "outscale-bsu" "ubuntu_base_for_redis_enterprise" {
   launch_block_device_mappings {
     device_name                 = "/dev/sda1"
     volume_size                 = var.root_volume_size
-    volume_type                 = "gp3"
+    volume_type                 = "gp2"
     delete_on_vm_deletion       = true
   }
 
@@ -98,23 +98,18 @@ build {
   }
 
   provisioner "file" {
-    source      = "../image_scripts/prepare-redis-install.sh"
-    destination = "/home/ubuntu/prepare-redis-install.sh"
-  }
-
-  provisioner "file" {
-    source      = "../image_scripts/install-redis.sh"
-    destination = "/home/ubuntu/install-redis.sh"
+    source      = "../image_scripts/prepare-and-install-redis-install.sh"
+    destination = "/home/outscale/prepare-and-install-redis-install.sh"
   }
 
   provisioner "file" {
     source      = "../image_scripts/redis-install-answers.txt" # corrige la coquille
-    destination = "/home/ubuntu/redis-install-answers.txt"
+    destination = "/home/outscale/redis-install-answers.txt"
   }
 
   provisioner "file" {
     source      = "../redis-software/${local.redis_tarball_name}"
-    destination = "/home/ubuntu/redis-enterprise.tar"
+    destination = "/home/outscale/redis-enterprise.tar"
   }
 
   provisioner "shell" {
@@ -122,29 +117,8 @@ build {
     inline_shebang   = "/bin/bash -eux"
     inline = [
       "set -euxo pipefail",
-      "chmod +x /home/ubuntu/prepare-redis-install.sh",
-      "sudo -E /home/ubuntu/prepare-redis-install.sh"
-    ]
-  }
-
-  provisioner "shell" {
-    inline_shebang   = "/bin/bash -eux"
-    inline = [
-      "echo 'sleep 10'; sleep 10",
-      "echo '### Rebooting instance...'",
-      "sudo reboot"
-    ]
-    expect_disconnect = true
-  }
-
-  provisioner "shell" {
-    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
-    pause_before     = "60s"
-    inline_shebang   = "/bin/bash -eux"
-    inline = [
-      "set -euxo pipefail",
-      "chmod +x /home/ubuntu/install-redis.sh",
-      "sudo -E /home/ubuntu/install-redis.sh"
+      "chmod +x /home/outscale/prepare-and-install-redis-install.sh",
+      "sudo -E /home/outscale/prepare-and-install-redis-install.sh"
     ]
   }
 }
