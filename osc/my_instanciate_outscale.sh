@@ -13,14 +13,36 @@ pause() {
 
 set -euo pipefail
 
-FLEX_FLAG="" #set to "" if you don't want flex
+FLEX_FLAG="flex" #set to "" if you don't want flex
 FLEX_SIZE_GB="20" #size of each flex volume in GB, note that it will be mounted as RAID0 so total size will be 2x this value
+FLEX_IOPS="${FLEX_IOPS:-1000}"  # IOPS per volume if using io1 (min 100, max 64000 for AWS, 20000 for outscale, ratio 50 IOPS/GB) 
+
 MACHINE_TYPE="tinav5.c2r4p3"
 
 
 FLE_CMD=""
 if [[ "$FLEX_FLAG" == "flex" ]]; then
-  FLE_CMD="sudo /opt/redislabs/sbin/prepare_flash.sh"
+  FLE_CMD=$(cat <<'EOF'
+set -euo pipefail
+
+# Outscale bug :  ssd are set as rotational drive while it shouldn't
+# This rule fix the issue by setting drives as solid for sd* and vd*
+# this fix allows prepare_flash.sh to work properly as it checks finds only non rotational drives
+sudo tee /etc/udev/rules.d/99-rotational-fix.rules >/dev/null <<'RULES'
+ACTION=="add|change", KERNEL=="sd*", ATTR{queue/rotational}="0"
+ACTION=="add|change", KERNEL=="vd*", ATTR{queue/rotational}="0"
+RULES
+
+# Recharger udev et (re)déclencher sur les disques présents
+sudo udevadm control --reload
+for d in /sys/block/sd* /sys/block/vd*; do
+  [ -e "$d" ] && sudo udevadm trigger --action=change --sysname-match="$(basename "$d")"
+done
+
+# Préparer le flash (RAID0+ext4) côté Redis Enterprise
+sudo /opt/redislabs/sbin/prepare_flash.sh -y
+EOF
+)
 fi
 
 cluster_dns="$OUTSCALE_CLUSTER_DNS"

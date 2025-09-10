@@ -250,6 +250,16 @@ Run the following scripts in order from the project root:
 
 3. **Instantiate an EC2 Instance from the Built Image:**
 
+  Choose if you want to use Flex or not.
+  Flex is a technology that allow a Database to use RAM + SSD, without any impact on client code.
+  To use flex, edit the my_instanciate*.sh and edit the following vars: 
+
+```sh
+FLEX_FLAG="flex" #set to "" if you don't want flex
+FLEX_SIZE_GB="20" #2 disks are mounted in RAID0, so you'll get 2x$FLEX_SIZE_GB as usable disk
+FLEX_IOPS="${FLEX_IOPS:-1000}"  # IOPS per volume for io1 (min 100, max 64000 for AWS, 20000 for outscale, ratio 50 IOPS/GB) 
+```
+
   **AWS**
 
    ```sh
@@ -300,6 +310,16 @@ outscale.paquerette.com. 10800 IN NS ns3.outscale.paquerette.com.
 
 Cluster setup complete. Access your cluster at https://outscale.paquerette.com:8443 with username adm@redis.io and password redis_adm.
 ```
+
+If you don't want to wait for DNS propagation, you can flush your local DNS cache with : 
+
+On MacOsX : 
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`
+
+or 
+
+On Linux:
+`sudo resolvectl flush-caches`
 
 5. **Connect to the Redis Cluster Manager:**
 

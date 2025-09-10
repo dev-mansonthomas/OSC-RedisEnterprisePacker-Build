@@ -8,10 +8,11 @@ pause() {
 }
 # Valeurs par défaut
 SUBNET_IDX=""
-MACHINE_TYPE="tinav5.c2r4p3"   # équivalent outscale au t3.xlarge (adapter si besoin)
-FLEX_FLAG=""
-FLEX_SIZE_GB=""
-VOLUME_TYPE="gp2"  # gp2 (SSD), io1 (provisioned IOPS SSD)
+MACHINE_TYPE="tinav5.c2r4p3"    # specific machine type to outscale
+FLEX_FLAG="flex"                # set to "" if you don't want flex
+FLEX_SIZE_GB="40"               # 2 volumes in RAID0 of this size will be provisionned if FLEX_FLAG is set
+VOLUME_TYPE="io1"               # gp2 (SSD), io1 (provisioned IOPS SSD)
+FLEX_IOPS="${FLEX_IOPS:-1000}"  # IOPS per volume for io1 (min 100, max 64000 for AWS, 20000 for outscale, ratio 50 IOPS/GB) 
 
 usage() {
   cat <<EOF
@@ -79,9 +80,9 @@ echo "#   Machine type : ${MACHINE_TYPE}"
 echo "#   Root device  : /dev/sda1"
 echo "#   AMI/OMI ID   : ${AMI_ID}"
 if [[ "$FLEX_FLAG" == "flex" ]]; then
-  echo "#   Flex volume  : ${FLEX_SIZE_GB} GB (x2 in RAID0)"
+  echo "#   Flex volumes : 2 x ${FLEX_SIZE_GB} GiB (type=${VOLUME_TYPE}, IOPS=${FLEX_IOPS})"
 else
-  echo "#   Flex volume  : none"
+  echo "#   Flex volumes : none"
 fi
 echo "#########################################"
 
@@ -94,22 +95,42 @@ AZ="${!AZ_ID_VAR}"
 INSTANCE_NAME="redis-node-${SUBNET_IDX}"
 OAPI_PROFILE="default"
 
-if [[ -z "$AMI_ID" ]]; then echo "Erreur: OUTSCALE_AMI_ID n'est pas défini"; exit 1; fi
-if [[ -z "$KEY_NAME" ]]; then echo "Erreur: KEY_NAME n'est pas défini"; exit 1; fi
-if [[ -z "$SECURITY_GROUP_ID" ]]; then echo "Erreur: SG_ID n'est pas défini"; exit 1; fi
-if [[ -z "$SUBNET_ID" ]]; then echo "Erreur: ${SUBNET_ID_VAR} n'est pas défini"; exit 1; fi
+if [[ -z "$AMI_ID"            ]]; then echo "Erreur: OUTSCALE_AMI_ID n'est pas défini";     exit 1; fi
+if [[ -z "$KEY_NAME"          ]]; then echo "Erreur: KEY_NAME n'est pas défini";            exit 1; fi
+if [[ -z "$SECURITY_GROUP_ID" ]]; then echo "Erreur: SG_ID n'est pas défini";               exit 1; fi
+if [[ -z "$SUBNET_ID"         ]]; then echo "Erreur: ${SUBNET_ID_VAR} n'est pas défini";    exit 1; fi
 
+# --- BlockDeviceMappings (FLEX -> 2 volumes io1) ---
+BDM_JSON="[]"
 if [[ "$FLEX_FLAG" == "flex" ]]; then
-  BLOCK_DEVICE_MAPPINGS="--block-device-mappings \
-  DeviceName=/dev/sdf,Ebs={VolumeSize=${FLEX_SIZE_GB},VolumeType=${VOLUME_TYPE},DeleteOnTermination=true} \
-  DeviceName=/dev/sdg,Ebs={VolumeSize=${FLEX_SIZE_GB},VolumeType=${VOLUME_TYPE},DeleteOnTermination=true}"
-else
-  BLOCK_DEVICE_MAPPINGS=""
+  # NOTE: io1 requiert un champ "Iops". Ajuste FLEX_IOPS selon la taille/perf souhaitée.
+  BDM_JSON="$(
+    jq -nc --arg size "$FLEX_SIZE_GB" --arg iops "$FLEX_IOPS" '
+      [
+        {
+          "DeviceName": "/dev/sdf",
+          "Bsu": {
+            "VolumeSize": ($size|tonumber),
+            "VolumeType": "io1",
+            "Iops": ($iops|tonumber),
+            "DeleteOnVmDeletion": true
+          }
+        },
+        {
+          "DeviceName": "/dev/sdg",
+          "Bsu": {
+            "VolumeSize": ($size|tonumber),
+            "VolumeType": "io1",
+            "Iops": ($iops|tonumber),
+            "DeleteOnVmDeletion": true
+          }
+        }
+      ]'
+  )"
 fi
 
-# Lancer l'instance sur Outscale via le wrapper aws-osc (et non la CLI AWS par défaut)
-#--region "$OUTSCALE_REGION" 
-#$BLOCK_DEVICE_MAPPINGS \
+echo "BlockDeviceMappings: $BDM_JSON"
+
 
 VM_JSON=$(oapi-cli --profile "$OAPI_PROFILE" CreateVms \
   --ImageId "$OUTSCALE_AMI_ID" \
@@ -117,7 +138,9 @@ VM_JSON=$(oapi-cli --profile "$OAPI_PROFILE" CreateVms \
   --KeypairName "outscale-tmanson-keypair" \
   --SubnetId "$SUBNET_ID" \
   --Placement '{"Tenancy":"default","SubregionName":"'"$AZ"'"}' \
-  --SecurityGroupIds '["'"$SG_ID"'"]')
+  --SecurityGroupIds '["'"$SG_ID"'"]' \
+  --BlockDeviceMappings "$BDM_JSON"
+)
 
 echo "VM JSON Response: 
 ##########################
@@ -129,12 +152,10 @@ INSTANCE_ID=$(echo "$VM_JSON" | jq -r '.Vms[0].VmId')
 echo "Instance ID: $INSTANCE_ID"
 
 PUBLIC_IP=$(echo "$VM_JSON" | jq -r '.Vms[0].PublicIp')
-VOLUME_ID=$(echo "$VM_JSON" | jq -r '.Vms[0].BlockDeviceMappings[].Bsu.VolumeId')
+
 
 echo "Allocated Public IP: $PUBLIC_IP"
-echo "Allocated Volume IDs: $VOLUME_ID"
 echo "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@$PUBLIC_IP"
-
 echo "Waiting for instance $INSTANCE_ID to pass status checks..."
 
 get_state_vm=""
@@ -151,8 +172,8 @@ echo "Instance $INSTANCE_ID is now running."
 
 # Ex: taguer les volumes de la VM
 oapi-cli --profile "$OAPI_PROFILE" CreateTags \
---ResourceIds '["'"$INSTANCE_ID"'"]' \
---Tags '[{"Key":"Name","Value":"'"$INSTANCE_NAME"'"}]'
+    --ResourceIds '["'"$INSTANCE_ID"'"]' \
+    --Tags '[{"Key":"Name","Value":"'"$INSTANCE_NAME"'"}]'
 
 
 echo "Sleeping 30 seconds to let the instance initialize..."
