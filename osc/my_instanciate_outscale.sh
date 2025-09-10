@@ -1,117 +1,133 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/../_my_env.sh"
+set -euo pipefail
 
-if [[ -z "${AMI_ID:-}" ]]; then
-  echo "Error: AMI_ID is not set in _my_env.sh. Please build the AMI first."
-  exit 1
+# ---------- Params ----------
+NODES=3
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --nodes) NODES="${2:-}"; shift 2 ;;
+    -h|--help)
+      cat <<EOF
+Usage: $0 [--nodes <odd between 3 and 35>]
+
+Default value : --nodes 3
+AZ deployment : round-robin on 3 AZ/subnets (AZ1, AZ2, AZ3)
+EOF
+      exit 0
+      ;;
+    *) echo "Arg inconnu: $1"; exit 1 ;;
+  esac
+done
+
+# ---------- Validation ----------
+if ! [[ "$NODES" =~ ^[0-9]+$ ]]; then
+  echo "Error: --nodes must be an integer. Got: $NODES"; exit 1
+fi
+if (( NODES < 3 || NODES > 35 || NODES % 2 == 0 )); then
+  echo "Error: --nodes must be odd and 3 ≤ N ≤ 35. Got: $NODES"; exit 1
+fi
+if [[ -z "${AMI_ID:-}" && -z "${OUTSCALE_AMI_ID:-}" ]]; then
+  echo "Error: AMI_ID/OUTSCALE_AMI_ID not set in _my_env.sh"; exit 1
 fi
 
-pause() {
-  read -rp "Press any key to continue..." -n1
-  echo    # retour à la ligne après la touche
-}
+# ---------- Constantes / env ----------
+SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+TARGET_SSH_KEY="${OUTSCALE_SSH_KEY}"
 
-set -euo pipefail
+cluster_dns="${OUTSCALE_CLUSTER_DNS}"
+RS_admin="${REDIS_LOGIN}"
+RS_password="${REDIS_PWD}"
 
-FLEX_FLAG="flex" #set to "" if you don't want flex
-FLEX_SIZE_GB="20" #size of each flex volume in GB, note that it will be mounted as RAID0 so total size will be 2x this value
-FLEX_IOPS="${FLEX_IOPS:-1000}"  # IOPS per volume if using io1 (min 100, max 64000 for AWS, 20000 for outscale, ratio 50 IOPS/GB) 
-
-MACHINE_TYPE="tinav5.c2r4p3"
-
-
+# Flex (udev + prepare_flash) – exécuté côté VM
 FLE_CMD=""
-if [[ "$FLEX_FLAG" == "flex" ]]; then
+if [[ "${FLEX_FLAG:-}" == "flex" ]]; then
   FLE_CMD=$(cat <<'EOF'
 set -euo pipefail
-
-# Outscale bug :  ssd are set as rotational drive while it shouldn't
-# This rule fix the issue by setting drives as solid for sd* and vd*
-# this fix allows prepare_flash.sh to work properly as it checks finds only non rotational drives
 sudo tee /etc/udev/rules.d/99-rotational-fix.rules >/dev/null <<'RULES'
 ACTION=="add|change", KERNEL=="sd*", ATTR{queue/rotational}="0"
 ACTION=="add|change", KERNEL=="vd*", ATTR{queue/rotational}="0"
 RULES
-
-# Recharger udev et (re)déclencher sur les disques présents
 sudo udevadm control --reload
 for d in /sys/block/sd* /sys/block/vd*; do
   [ -e "$d" ] && sudo udevadm trigger --action=change --sysname-match="$(basename "$d")"
 done
-
-# Préparer le flash (RAID0+ext4) côté Redis Enterprise
 sudo /opt/redislabs/sbin/prepare_flash.sh -y
 EOF
 )
 fi
 
-cluster_dns="$OUTSCALE_CLUSTER_DNS"
-RS_admin="$REDIS_LOGIN"
-RS_password="$REDIS_PWD"
-mode="init"
-zone="$AZ1"
+# ---------- Helpers ----------
+# rr_idx: 1->1, 2->2, 3->3, 4->1, 5->2, 6->3, ...
+rr_idx() { local i="$1"; echo $(( ((i-1) % 3) + 1 )); }
 
-./instanciate_image_outscale.sh --subnet 1 --machine-type "$MACHINE_TYPE" ${FLEX_FLAG:+--flex "$FLEX_SIZE_GB"}
-source "$(dirname "$0")/../_my_env.sh"
-# Configure Redis cluster on the remote instance
-echo "Connecting to $OUTSCALE_INSTANCE_PUBLIC_IP_1 to configure cluster..."
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa ../image_scripts/create-or-join-redis-cluster.sh outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_1}":/home/outscale/create-or-join-redis-cluster.sh
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_1}" << EOF
+# lance un nœud et retourne son IP (à partir de OUTSCALE_INSTANCE_PUBLIC_IP_<index>)
+launch_node() {
+  local node_idx="$1"
+  local subnet_idx; subnet_idx="$(rr_idx "$node_idx")"
+
+  ./instanciate_image_outscale.sh \
+    --node-num "${node_idx}" \
+    --subnet "${subnet_idx}" 
+  #relead env file as new var is set for the IP of the new instance
+  source "$(dirname "$0")/../_my_env.sh"
+}
+
+# configure un nœud (init ou join)
+configure_node() {
+  local ip="$1" zone="$2" mode="$3" ord="$4" master_ip="${5:-}"
+
+  scp $SSH_OPTS -i "$TARGET_SSH_KEY" \
+    ../image_scripts/create-or-join-redis-cluster.sh \
+    outscale@"$ip":/home/outscale/create-or-join-redis-cluster.sh
+
+  ssh $SSH_OPTS -i "$TARGET_SSH_KEY" outscale@"$ip" <<EOF
   ${FLE_CMD:-true}
   chmod 700 /home/outscale/create-or-join-redis-cluster.sh
-  sudo /home/outscale/create-or-join-redis-cluster.sh "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "$OUTSCALE_INSTANCE_PUBLIC_IP_1" "$zone" 1
+  sudo /home/outscale/create-or-join-redis-cluster.sh \
+    "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "$ip" "$zone" "$ord" ${master_ip:+"$master_ip"}
 EOF
+}
 
+# ---------- Déploiement ----------
+declare -a NODE_IPS
+
+# Node 1 (init) sur AZ1
+zone="$OSC_AZ1"
+echo ">>> Déploiement node 1 (init) sur AZ1…"
+launch_node 1
+ip_master="${OUTSCALE_INSTANCE_PUBLIC_IP_1:?OUTSCALE_INSTANCE_PUBLIC_IP_1 manquante}"
+NODE_IPS[1]="$ip_master"
+configure_node "$ip_master" "$zone" "init" 1
 echo "sleep 30 seconds to let the cluster initialize..."
-sleep 30 
+sleep 30
 
+# Nodes 2..N (join), round-robin sur AZ1/AZ2/AZ3
+for i in $(seq 2 "$NODES"); do
+  idx="$(rr_idx "$i")"
+  zone_var="OSC_AZ${idx}"
+  zone="${!zone_var}"
+  echo ">>> Déploiement node $i (join) sur ${zone_var}…"
+  launch_node "$i"
+  ip_var="OUTSCALE_INSTANCE_PUBLIC_IP_${i}"
+  ip_i="${!ip_var:?$ip_var manquante}"
+  NODE_IPS[$i]="$ip_i"
+  configure_node "$ip_i" "$zone" "join" "$i" "$ip_master"
+done
 
-mode="join"
-master_ip="$OUTSCALE_INSTANCE_PUBLIC_IP_1"
-
-./instanciate_image_outscale.sh --subnet 2 --machine-type "$MACHINE_TYPE" ${FLEX_FLAG:+--flex "$FLEX_SIZE_GB"}
-source "$(dirname "$0")/../_my_env.sh"
-zone="$AZ2"
-
-# Configure Redis cluster on the remote instance
-echo "Connecting to $OUTSCALE_INSTANCE_PUBLIC_IP_2 to configure cluster..."
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa ../image_scripts/create-or-join-redis-cluster.sh outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_2}":/home/outscale/create-or-join-redis-cluster.sh
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_2}" << EOF
-  ${FLE_CMD:-true}
-  chmod 700 /home/outscale/create-or-join-redis-cluster.sh
-  sudo /home/outscale/create-or-join-redis-cluster.sh "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "${OUTSCALE_INSTANCE_PUBLIC_IP_2}" "$zone" 2 "$master_ip"
-EOF
-
-./instanciate_image_outscale.sh --subnet 3 --machine-type "$MACHINE_TYPE" ${FLEX_FLAG:+--flex "$FLEX_SIZE_GB"}
-source "$(dirname "$0")/../_my_env.sh"
-zone="$AZ3"
-
-# Configure Redis cluster on the remote instance
-echo "Connecting to $OUTSCALE_INSTANCE_PUBLIC_IP_3 to configure cluster..."
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa ../image_scripts/create-or-join-redis-cluster.sh outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_3}":/home/outscale/create-or-join-redis-cluster.sh
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/outscale-tmanson-keypair.rsa outscale@"${OUTSCALE_INSTANCE_PUBLIC_IP_3}" << EOF
-  ${FLE_CMD:-true}
-  chmod 700 /home/outscale/create-or-join-redis-cluster.sh
-  sudo /home/outscale/create-or-join-redis-cluster.sh "$cluster_dns" "$RS_admin" "$RS_password" "$mode" "$OUTSCALE_INSTANCE_PUBLIC_IP_3" "$zone"  3 "$master_ip"
-EOF
-
-
+# ---------- Récap DNS ----------
 echo "
-Confiure your DNS with the following entries:
-###############################################################################################
-ns1.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_1}
-ns2.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_2}
-ns3.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_3}
-
-${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_1}
-${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_2}
-${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${OUTSCALE_INSTANCE_PUBLIC_IP_3}
-
-${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns1.${OUTSCALE_CLUSTER_DNS}.
-${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns2.${OUTSCALE_CLUSTER_DNS}.
-${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns3.${OUTSCALE_CLUSTER_DNS}.
-###############################################################################################
-
-"
+Configure your DNS with the following entries:
+###############################################################################################"
+for n in 1 2 3; do
+  [[ -n "${NODE_IPS[$n]:-}" ]] && echo "ns${n}.${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${NODE_IPS[$n]}"
+done
+for n in "${!NODE_IPS[@]}"; do
+  echo "${OUTSCALE_CLUSTER_DNS}. 10800 IN A ${NODE_IPS[$n]}"
+done
+echo "${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns1.${OUTSCALE_CLUSTER_DNS}."
+echo "${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns2.${OUTSCALE_CLUSTER_DNS}."
+echo "${OUTSCALE_CLUSTER_DNS}. 10800 IN NS ns3.${OUTSCALE_CLUSTER_DNS}."
+echo "###############################################################################################"
 
 echo "Cluster setup complete. Access your cluster at https://$cluster_dns:8443 with username $RS_admin and password $RS_password."

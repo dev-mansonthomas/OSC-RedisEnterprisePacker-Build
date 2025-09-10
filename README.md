@@ -1,4 +1,4 @@
-# Redis Enterprise Packer Images on AWS.
+# Redis Enterprise - Build Packer Images for AWS & Outscale
 
 This project builds AWS/Outscale AMIs for Redis Enterprise using [Packer](https://www.packer.io/) and automates the setup and teardown of the required AWS/Outscale infrastructure.
 Note : it's to either setup AWS or Outscale, there's no interconnexion between the two installation. 
@@ -146,6 +146,11 @@ Update `_my_env.sh` with (copy the `_my_env_.sh_template` file)
  * `REGION`      : Which Region will Redis Enteprise be deployed by `my_instanciate.sh`, ex `REGION=eu-west-3`
  * `REDIS_LOGIN` : Redis Enterprise administrator login,    used by `my_instanciate.sh`, ex `REDIS_LOGIN=adm@redis.io`
  * `REDIS_PWD`   : Redis Enterprise administrator password, used by `my_instanciate.sh`, ex `REDIS_PWD=redis_adm`
+ * `FLEX_FLAG`   : Set to "flex" to enable Flex Support, or "" if you want to disable it. Flex allows to use SSD for the DB available memory (at lower costs)
+ * `FLEX_SIZE_GB`: Flex Disk Size in GB (2 disks are mounted in RAID0, so you'll get 2x this size as usable disk)
+ * `FLEX_IOPS`   : IOPS per volume for io1 (min 100, max 64000 for AWS, 20000 for outscale, ratio 50 IOPS/GB) 
+ * `MACHINE_TYPE`: Redis Node machine Type
+ * `SSH_KEY`     : Path to the RSA Private Key
 
 3. **import your ssh public key**
 
@@ -347,23 +352,17 @@ cd aws/
 teardown-aws-vpc.sh
 ```
 
----
-
 ## Notes
 
 - The project uses [`packer/ubuntu_ufw_aws_image.pkr.hcl`](packer/ubuntu_ufw_aws_image.pkr.hcl ) as the Packer template.
-- Redis Enterprise tarball must be present in [`redis-software`](redis-software ).
+- Redis Enterprise tarball must be present in [`redis-software`](redis-software ). You can download it from [`Redis Cloud`](https://cloud.redis.io)
 - Environment variables for resource IDs are stored in `_my_env.sh`.
 
----
+## TODO
 
-TODO : https://redis.io/docs/latest/operate/rs/references/cli-utilities/rladmin/cluster/join/
 * test renable ufw + firewall=yes in the answer file
-* gestion des mounts points
-* installation scriptée
+* Update AWS setup to be at the same level of automation than Outscale (where you can deploy 3 to 35 nodes)
 * Ajout de la license
-* internal vs external ip  : https://redis.io/docs/latest/operate/rs/networking/multi-ip-ipv6/
-* rackzone awarness: https://redis.io/docs/latest/operate/rs/clusters/configure/rack-zone-awareness/
 
 
 # Annexe
