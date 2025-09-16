@@ -25,7 +25,7 @@ variable "region" {
 
 variable "build_instance_type" {
   type    = string
-  default = "tinav5.c2r16p3" #c4.large 2vCPU / 4GB of RAM (cheap instance for dev purpose) https://docs.outscale.com/fr/userguide/Types-de-VM.html
+  default = "tinav5.c2r4p1" #c4.large 2vCPU / 4GB of RAM (cheap instance for dev purpose) https://docs.outscale.com/fr/userguide/Types-de-VM.html
 }
 
 variable "root_volume_size" {

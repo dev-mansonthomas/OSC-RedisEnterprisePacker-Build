@@ -41,6 +41,8 @@ secrets.toml
 # Fichiers specifiques
 redis-software/*
 build_scripts/manifest.json
+build_scripts/packer.out
+build_scripts/install.log
 build_scripts/ec2_ubuntu_base_for_redis_enteprise.pem
 .gitignore
 .DS_Store

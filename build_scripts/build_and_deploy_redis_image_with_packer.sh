@@ -14,11 +14,11 @@ TARGET_REGION=""
 
 case "$PROVIDER" in
   aws)
-    HCL_FILE=../packer/ubuntu_ufw_aws_image.pkr.hcl
+    HCL_FILE=../packer/redis_ubuntu_aws_image.pkr.hcl
     TARGET_REGION="$REGION"
     ;;
   outscale)
-    HCL_FILE=../packer/ubuntu_ufw_outscale_image.pkr.hcl
+    HCL_FILE=../packer/redis_ubuntu_outscale_image.pkr.hcl
     TARGET_REGION="$OUTSCALE_REGION"
     ;;
   *)
@@ -39,7 +39,10 @@ packer init     $HCL_FILE
 packer validate $HCL_FILE
 
 PACKER_LOG=1 PACKER_LOG_PATH=packer.out \
-  packer build -var "region=${TARGET_REGION}" $BUILD_OPTS $HCL_FILE
+  packer build \
+    -var "region=${TARGET_REGION}" \
+    -var "keypair_private_file=${OUTSCALE_SSH_KEY}" \
+    $BUILD_OPTS $HCL_FILE
 
 # Extract AMI ID from manifest.json
 if [[ -f "$MANIFEST_FILE" ]]; then

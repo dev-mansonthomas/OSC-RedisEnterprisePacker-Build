@@ -5,15 +5,15 @@ Note : it's to either setup AWS or Outscale, there's no interconnexion between t
 
 ## Requirements
 
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (configured and authenticated)
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (configured and authenticated) Or [Outscale CLI](https://github.com/outscale/oapi-cli) 
 - AWS or Outscale Account
 - [Packer](https://www.packer.io/downloads)
 - [jq](https://stedolan.github.io/jq/) (for parsing JSON in shell scripts)
 - Bash shell (tested on Linux/macOS)
 - Registered AWS key pair (for SSH access)
 - Sufficient AWS permissions to create/delete VPCs, subnets, route tables, security groups, EC2 instances, and AMIs
-- A Domain Name where you can customize DNS entries (Add IN NS statements)
-- Tested with BASH 5.x
+- A DNS server and Domain Name where you can customize DNS entries (Add IN NS statements)
+- Tested with BASH 5.x/ZSH
 
 ## Initial Setup
 
