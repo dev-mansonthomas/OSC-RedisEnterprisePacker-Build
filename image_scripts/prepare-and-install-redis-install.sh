@@ -16,6 +16,9 @@ echo "Detected user: $USER"
 apt-get update -y
 apt-get upgrade -y
 
+# --- Wait upgrade to complete, otherwise there might be some issues installing dpkg-sig ---
+sleep 5
+
 # --- Configure umask for root & ubuntu ---
 echo "umask 0022" | tee -a /root/.profile > /dev/null
 echo "umask 0022" >> ~/.profile

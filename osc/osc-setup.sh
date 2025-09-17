@@ -18,7 +18,7 @@ REGION="${OUTSCALE_REGION:-eu-west-2}"
 NAME="${OWNER}-net"
 
 pause() {
-  read -rp "Press any key to continue..." -n1
+  #read -rp "Press any key to continue..." -n1
   echo    # retour à la ligne après la touche
 }
 

@@ -360,6 +360,8 @@ teardown-aws-vpc.sh
 
 ## TODO
 
+* fork project to isolate outscale
+* fork project to isolate build from run
 * test renable ufw + firewall=yes in the answer file
 * Update AWS setup to be at the same level of automation than Outscale (where you can deploy 3 to 35 nodes)
 * Ajout de la license
