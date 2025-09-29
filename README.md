@@ -176,7 +176,7 @@ Run the following scripts in order from the project root:
 
 ## Notes
 
-- The project uses [`packer/ubuntu_ufw_aws_image.pkr.hcl`](packer/ubuntu_ufw_aws_image.pkr.hcl ) as the Packer template.
+- The project uses [`packer/redis_ubuntu_outscale_image.pkr.hcl`](packer/redis_ubuntu_outscale_image.pkr.hcl) as the Packer template.
 - Environment variables for resource IDs are stored in `_my_env.sh`.
 
 ## TODO
