@@ -94,6 +94,8 @@ else
   echo "Aucune VM trouvée dans ce Net."
 fi
 
+sleep 15
+
 # ---------- 2) Supprimer la route 0.0.0.0/0 ----------
 echo "[2/7] Suppression de la route par défaut (0.0.0.0/0)"
 oapi-cli --profile "$OAPI_PROFILE" DeleteRoute \

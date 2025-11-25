@@ -94,7 +94,7 @@ systemctl disable --now apparmor
 
 # --- Extract Redis Enterprise archive ---
 cd /home/$USER
-mkdir redis-enterprise
+mkdir -p redis-enterprise
 tar -xf redis-enterprise.tar -C redis-enterprise
 mv redis-install-answers.txt ./redis-enterprise
 

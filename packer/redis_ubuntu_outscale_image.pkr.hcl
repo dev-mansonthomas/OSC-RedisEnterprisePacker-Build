@@ -20,7 +20,7 @@ variable "keypair_private_file" {
 
 variable "region" {
   type    = string
-  default = "eu-west-2"
+  default = "eu-west-1"
 }
 
 variable "build_instance_type" {
