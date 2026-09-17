@@ -103,10 +103,10 @@ jq -e . build_scripts/manifest.json                                   # manifest
 | `packer/redis_ubuntu_outscale_image.pkr.hcl` | The `outscale-bsu` source + build: 30 GB gp2 root, uploads the provisioning script, the answer file and the 993 MB tarball, then runs the script as root. `force_deregister`/`force_delete_snapshot` make rebuilds idempotent. |
 | `image_scripts/prepare-and-install-redis-install.sh` | Runs **inside** the build VM as root: apt upgrade, umask, utilities, swap off, purge `snapd`/`apport`/`unattended-upgrades`, disable the systemd-resolved stub listener, disable AppArmor, verify the `.deb` GPG signature, widen the ephemeral port range, then `install.sh -c redis-install-answers.txt`. |
 | `image_scripts/redis-install-answers.txt` | Unattended answers for Redis Enterprise `install.sh`: `systune=yes`, `rlcheck=yes`, `firewall=no`, `ntp=no`, `ignore_swap=no`. |
-| `image_scripts/create-or-join-redis-cluster.sh` | **Dead code here.** Byte-identical to the copy in `-Run`, which is the only repo that invokes it (`osc/cluster_instanciate.sh`). Not uploaded by the Packer template. |
 | `build_scripts/manifest.json`, `build_scripts/packer.out` | Build artefacts. Listed in `.gitignore` but `manifest.json` is *needed* by the wrapper — keep it locally. |
 | `_my_env.sh` / `_my_env.template.sh` | Local config + append-only generated state. Git-ignored. |
-| `redis-software/` | Drop the Redis Enterprise Jammy tarball here. Git-ignored. |
+| `redis-software/` | Drop the Redis Enterprise Jammy tarball here. Git-ignored except `SHA256SUMS`. |
+| *(removed)* | `image_scripts/create-or-join-redis-cluster.sh` was deleted in PR 2 — it was never part of the image (the Packer template uploads only the provisioning script, the answers file and the tarball). The live copy belongs to `-Run`. Don't re-add it here. |
 
 ## Conventions
 

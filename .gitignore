@@ -39,12 +39,21 @@ htmlcov/
 secrets.toml
 
 # Fichiers specifiques
+# Le tarball Redis Enterprise (~350 Mo-1 Go) n'est pas redistribuable.
 redis-software/*
+# ...mais on garde la trace des empreintes verifiees (cf. fetch_redis_tarball.sh).
+!redis-software/SHA256SUMS
+# Artefacts de build. ATTENTION: manifest.json est REQUIS par
+# build_and_deploy_redis_image_with_packer.sh pour extraire l'OMI ID -- ne pas le
+# supprimer localement, il porte aussi l'historique des builds (cf. TODO T-33).
 build_scripts/manifest.json
 build_scripts/packer.out
 build_scripts/install.log
-build_scripts/ec2_ubuntu_base_for_redis_enteprise.pem
-.gitignore
 .DS_Store
+# Configuration locale de l'operateur: contient les IDs de ressources generes.
 _my_env.sh
-aws/setup-aws-output.txt
+# Materiel de cle privee, quelle que soit sa provenance.
+*.pem
+*.key
+*.rsa
+id_rsa*
