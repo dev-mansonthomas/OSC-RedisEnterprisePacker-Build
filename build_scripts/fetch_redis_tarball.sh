@@ -14,8 +14,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=lib/redis_version.sh
+# shellcheck source=build_scripts/lib/redis_version.sh
 source "$REPO_ROOT/build_scripts/lib/redis_version.sh"
 
 SOFTWARE_DIR="$REPO_ROOT/redis-software"
