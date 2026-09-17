@@ -53,6 +53,40 @@ if ! grep -qE "\"${TARGET_REGION}\"[[:space:]]*=" "$HCL_FILE"; then
   exit 1
 fi
 
+# --- L'OMI de base existe-t-elle encore ? ---
+# Outscale republie une OMI Ubuntu 22.04 tous les ~2 mois et dé-enregistre les
+# anciennes au bout de ~10 mois. `packer validate` ne le voit PAS : il vérifie
+# seulement que source_omi est non vide. Le 2026-09-17, l'ID épinglé avait déjà
+# disparu -- le build aurait échoué tardivement, après l'upload du tarball.
+# Contrôle en lecture seule ; ignorable avec SKIP_OMI_CHECK=1.
+SOURCE_OMI="$(sed -nE "s/^[[:space:]]*\"${TARGET_REGION}\"[[:space:]]*=[[:space:]]*\"(ami-[0-9a-f]+)\".*/\1/p" "$HCL_FILE" | head -1)"
+
+if [[ "${SKIP_OMI_CHECK:-0}" != 1 ]] && command -v oapi-cli >/dev/null; then
+  echo "Vérification de l'OMI de base ${SOURCE_OMI} dans ${TARGET_REGION}..."
+  if omi_json="$(oapi-cli --profile "${OAPI_PROFILE:-default}" ReadImages \
+                   --Filters "{\"ImageIds\":[\"${SOURCE_OMI}\"]}" 2>/dev/null)" \
+     && [[ "$(printf '%s' "$omi_json" | jq -r '(.Images // []) | length')" == "1" ]]; then
+    echo "  OK : $(printf '%s' "$omi_json" | jq -r '.Images[0].ImageName')"
+  else
+    echo "" >&2
+    echo "Erreur : l'OMI de base ${SOURCE_OMI} est introuvable dans ${TARGET_REGION}." >&2
+    echo "         Outscale l'a probablement dé-enregistrée. Trouvez la plus récente :" >&2
+    echo "" >&2
+    echo "  oapi-cli --profile default ReadImages \\" >&2
+    echo "    --Filters '{\"AccountAliases\":[\"Outscale\"],\"Architectures\":[\"x86_64\"],\"States\":[\"available\"]}' \\" >&2
+    echo "  | jq -r '.Images[] | select(.ImageName|test(\"ubuntu\";\"i\"))" >&2
+    echo "           | select(.ImageName|test(\"22[.-]?04\"))" >&2
+    echo "           | \"\\(.ImageId)  \\(.ImageName)  \\(.CreationDate)\"' | sort -k3" >&2
+    echo "" >&2
+    echo "         Puis mettez à jour source_omi_by_region dans :" >&2
+    echo "           $HCL_FILE" >&2
+    echo "         (SKIP_OMI_CHECK=1 pour passer outre)" >&2
+    exit 1
+  fi
+else
+  echo "Vérification de l'OMI de base ignorée (oapi-cli absent ou SKIP_OMI_CHECK=1)."
+fi
+
 # La clé privée n'existe que sur l'hôte : ce contrôle échoue volontairement dans la VM,
 # où le build n'est de toute façon pas exécutable (voir le modèle de sécurité global).
 if [[ ! -r "$OUTSCALE_SSH_KEY" ]]; then

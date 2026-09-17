@@ -20,7 +20,26 @@ assert_status 1 region_is_mapped "eu-west"
 
 it "the mapped region resolves to a real-looking OMI ID"
 omi="$(grep -E '"eu-west-2"[[:space:]]*=' "$HCL" | grep -oE 'ami-[0-9a-f]+')"
-assert_eq "ami-054f16b1" "$omi"
+assert_status 0 grep -qE '^ami-[0-9a-f]{8}$' <<<"$omi"
+
+it "and is NOT the deregistered ami-054f16b1 (gone upstream 2026-09-17)"
+assert_status 1 grep -qE '"eu-west-2"[[:space:]]*=[[:space:]]*"ami-054f16b1"' "$HCL"
+
+# The wrapper must check the OMI still exists: packer validate cannot, it only
+# requires source_omi to be non-empty. This is the failure mode that actually bit.
+WRAPPER="$(cd "$(dirname "$0")/.." && pwd)/build_scripts/build_and_deploy_redis_image_with_packer.sh"
+
+it "the wrapper resolves source_omi from the region map"
+assert_status 0 grep -q 'SOURCE_OMI=' "$WRAPPER"
+
+it "and verifies it exists via ReadImages before invoking packer"
+assert_status 0 grep -q 'ReadImages' "$WRAPPER"
+
+it "the check is skippable, so a stale ID never hard-blocks a deliberate build"
+assert_status 0 grep -q 'SKIP_OMI_CHECK' "$WRAPPER"
+
+it "and degrades quietly when oapi-cli is absent (the VM case)"
+assert_status 0 grep -q 'command -v oapi-cli' "$WRAPPER"
 
 it "the HCL declares the map, not a bare source_omi scalar"
 assert_status 0 grep -q 'variable "source_omi_by_region"' "$HCL"

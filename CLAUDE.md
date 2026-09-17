@@ -142,10 +142,12 @@ deliberately **not** in CI: it needs Outscale credentials and is a host action.
    today. Same for `OUTSCALE_AMI_ID` on repeated builds. Prune the file by hand between runs.
 2. **`tear_down_outscale.sh:46` loops forever** (`while :;` with no `tries` ceiling) if a VM
    never reaches `terminated`. Ctrl-C and clean up in the Cockpit.
-3. **Stale defaults in the `.pkr.hcl`**: `redis_version = "7.22.0-95"` (tarball is `8.0.2-41`),
-   `region = "eu-west-1"` while `source_omi = ami-054f16b1` only exists in **eu-west-2**, and
-   `keypair_private_file` hardcodes `/Users/thomas.manson/…`. Running `packer build` directly
-   instead of the wrapper fails or builds the wrong thing. Set `OUTSCALE_REGION=eu-west-2`.
+3. **The base OMI expires, a few times a year.** Outscale republishes Ubuntu 22.04 roughly every
+   2 months and deregisters old images after ~10. The pin is a `region → OMI` map in the HCL
+   with the refresh query beside it, and the wrapper runs a read-only `ReadImages` pre-check
+   before invoking packer (`SKIP_OMI_CHECK=1` to bypass). **`packer validate` cannot catch a dead
+   OMI** — it only requires `source_omi` to be non-empty. Current pin: `ami-88dbc914`
+   (`Ubuntu-22.04-2026-08-10`), verified 2026-09-17; the previous one had already gone.
 4. **The OMI name says `-aws-`** (`packer-redis-enterprise-…-ubuntu-22-lts-aws-…`) even though
    the builder is Outscale. Cosmetic leftover from the AWS era (dropped in `2e95621`).
 5. **The 993 MB tarball and its extracted tree are never removed** from the build VM, so they
