@@ -36,7 +36,7 @@ credentials). `[HOST+RUN]` = additionally needs a real 3-node cluster from
 
 ---
 
-### PR 1 — CI harness and lint baseline `[VM]`
+### PR 1 — CI harness and lint baseline ✅ **DONE 2026-09-17** `[VM]`
 
 No behaviour change. Everything after this depends on it.
 
@@ -50,7 +50,7 @@ No behaviour change. Everything after this depends on it.
 
 **Gate:** `scripts/lint.sh && tests/run.sh` green.
 
-### PR 2 — Deletions and hygiene `[VM]`
+### PR 2 — Deletions and hygiene ✅ **DONE 2026-09-17** `[VM]`
 
 - `git rm image_scripts/create-or-join-redis-cluster.sh` (**R-02**, confirmed)
 - `.gitignore`: drop the self-reference and dead AWS entries; note that `manifest.json` must be
@@ -60,7 +60,7 @@ No behaviour change. Everything after this depends on it.
 
 **Gate:** lint green; `git grep -c create-or-join` → 0.
 
-### PR 3 — Version detection and download `[VM]`
+### PR 3 — Version detection and download ✅ **DONE 2026-09-17** `[VM]`
 
 Self-contained and credential-free. Delivers the biggest day-to-day win.
 
@@ -77,7 +77,7 @@ Self-contained and credential-free. Delivers the biggest day-to-day win.
 **Gate:** `--version 8.0.2-41` is a no-op against the existing tarball and validates its digest;
 `--require-latest` exits non-zero (local 8.0.2-41 < 8.2.0-78). Tests green.
 
-### PR 4 — Wrapper and HCL correctness `[VM]` + one `[HOST]` smoke build
+### PR 4 — Wrapper and HCL correctness ✅ **DONE 2026-09-17** `[VM]` + one `[HOST]` smoke build
 
 - Rewrite `_my_env.sh`'s generated block **in place** between
   `# >>> generated (outscale) >>>` / `# <<<` markers, atomically (temp + `mv`); never append.
@@ -192,10 +192,10 @@ suggests it fixed something real.
 
 | PR | Title | Env | Builds | Cluster | Risk |
 |---|---|---|---|---|---|
-| 1 | CI harness and lint baseline | `[VM]` | – | – | none |
-| 2 | Deletions and hygiene | `[VM]` | – | – | none |
-| 3 | Version detection and download | `[VM]` | – | – | none |
-| 4 | Wrapper and HCL correctness | `[VM]`+`[HOST]` | 1 | – | low |
+| 1 | CI harness and lint baseline ✅ | `[VM]` | – | – | none |
+| 2 | Deletions and hygiene ✅ | `[VM]` | – | – | none |
+| 3 | Version detection and download ✅ | `[VM]` | – | – | none |
+| 4 | Wrapper and HCL correctness ✅ *(host build still owed)* | `[VM]`+`[HOST]` | 1 | – | low |
 | ~~5~~ | ~~Run the build inside the Net~~ **postponed** | `[HOST]` | 1 | – | low-med |
 | 6 | Image security, non-breaking | `[HOST]` | 1 | – | low |
 | 7 | SSH hardening | `[HOST+RUN]` | 1 | yes | low |
@@ -218,6 +218,26 @@ validation, and this is where the schedule needs slack.
   worth landing before anything that could destabilise SSH.
 - PRs 9 and 10 last, and **never stacked** — two unvalidated hardening changes in one build make
   a failure impossible to attribute.
+
+## Status 2026-09-17
+
+PRs 1-4 are implemented on `feat/build-remediation-pr1-4` (5 commits, docs first).
+All VM-verifiable gates pass: `scripts/lint.sh` clean, **66 tests** green.
+
+**Outstanding before PR 6 can start:** one **host** build to confirm PRs 1-4 changed
+nothing functionally. That is PR 4's gate and it cannot be run from the VM.
+
+| Finding | State |
+|---|---|
+| T-05, T-06, T-07, T-08, T-18, T-25, T-32, T-33, T-37*, T-39, R-02 | closed in code |
+| T-01 | closed in code; `_my_env.sh` migrated to managed blocks |
+| T-10 | region→OMI map in place; multi-region loop still out of scope |
+| T-13 | half done (tarball digest); GPG fingerprint pinning is PR 6 |
+| R-01 | drift guard in place; baseline records deliberate divergence |
+| T-41 | **postponed by decision** |
+
+\* T-37 needs `packer` added to `scripts/vm-provision.sh` in the dev-setup repo —
+outside this repository, so it is on you.
 
 ## Not in this plan
 

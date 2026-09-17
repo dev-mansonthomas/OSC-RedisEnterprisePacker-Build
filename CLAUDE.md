@@ -57,18 +57,22 @@ three scripts (see *Gotchas*).
 ### The three commands, in order
 
 ```sh
+# 0. Check which Redis Enterprise version you have vs the latest; fetch if needed
+./build_scripts/fetch_redis_tarball.sh            # report only
+./build_scripts/fetch_redis_tarball.sh --download # fetch the latest
+
 # 1. Provision the Outscale Net / IGW / route table / 3 subnets / security group
-cd osc/         && ./osc-setup.sh
+./osc/osc-setup.sh
 
 # 2. Build the OMI  (optional: -debug  →  packer -debug -on-error=ask)
-cd build_scripts/ && ./build_and_deploy_redis_image_with_packer.sh
+./build_scripts/build_and_deploy_redis_image_with_packer.sh
 
 # 3. Destroy everything created in step 1 (and any VM still in the Net)
-cd osc/         && ./tear_down_outscale.sh
+./osc/tear_down_outscale.sh
 ```
 
-All three **must be run from their own directory** — they use relative paths
-(`../packer/…`, `./manifest.json`, `../_my_env.sh`).
+The build wrapper and `osc-setup.sh` now resolve their own repo root, so they run
+from anywhere. `tear_down_outscale.sh` still expects to be run from `osc/`.
 
 ### What can be verified inside the VM
 
@@ -77,10 +81,13 @@ Outscale credentials, so the build is a **host-side action**. Credential-free ch
 run in the VM:
 
 ```sh
-shellcheck osc/*.sh build_scripts/*.sh image_scripts/*.sh   # exits 1: 2 warnings + 5 info, see T-39
-jq -e . build_scripts/manifest.json                                   # manifest well-formed
-# packer fmt -check packer/ ; packer validate packer/…pkr.hcl         # once packer is in the VM
+./scripts/lint.sh              # shellcheck + packer fmt/validate + drift guard + secret scan
+./scripts/lint.sh --no-packer  # same, when packer is absent (still the case in the VM)
+./tests/run.sh                 # 66 unit/integration tests, no network, no credentials
 ```
+
+Both are what CI runs (`.github/workflows/ci.yml`). The Packer build itself is
+deliberately **not** in CI: it needs Outscale credentials and is a host action.
 
 > `packer` is missing from `scripts/vm-provision.sh`. Add it — `packer fmt`/`validate`/`init`
 > are credential-free and belong in the VM (same posture as `tofu validate`). `oapi-cli` stays
