@@ -9,43 +9,26 @@ HCL="$(cd "$(dirname "$0")/.." && pwd)/packer/redis_ubuntu_outscale_image.pkr.hc
 # The predicate as used by build_and_deploy_redis_image_with_packer.sh
 region_is_mapped() { grep -qE "\"${1}\"[[:space:]]*=" "$HCL"; }
 
-it "eu-west-2 is mapped (the region every build so far has used)"
-assert_status 0 region_is_mapped "eu-west-2"
+# The region -> OMI map was removed: Outscale republishes Ubuntu 22.04 every ~2 months
+# and prunes old images after ~10, so any ID committed here expires. The wrapper now
+# resolves the newest image at build time, or honours an explicit pin.
+it "no OMI id is hardcoded as a value anywhere in the template"
+assert_eq "0" "$(grep -cE '=[[:space:]]*"ami-[0-9a-f]+"' "$HCL")"
 
-it "an unmapped region is rejected"
-assert_status 1 region_is_mapped "xx-west-9"
+it "the deregistered ami-054f16b1 is not pinned"
+assert_status 1 grep -qE '=[[:space:]]*"ami-054f16b1"' "$HCL"
 
-it "a region that is only a prefix of a mapped one is rejected"
-assert_status 1 region_is_mapped "eu-west"
+it "source_omi is a variable fed by the wrapper"
+assert_status 0 grep -q 'variable "source_omi"' "$HCL"
 
-it "the mapped region resolves to a real-looking OMI ID"
-omi="$(grep -E '"eu-west-2"[[:space:]]*=' "$HCL" | grep -oE 'ami-[0-9a-f]+')"
-assert_status 0 grep -qE '^ami-[0-9a-f]{8}$' <<<"$omi"
+it "and the source block consumes it"
+assert_status 0 grep -qE 'source_omi[[:space:]]+=[[:space:]]+var\.source_omi' "$HCL"
 
-it "and is NOT the deregistered ami-054f16b1 (gone upstream 2026-09-17)"
-assert_status 1 grep -qE '"eu-west-2"[[:space:]]*=[[:space:]]*"ami-054f16b1"' "$HCL"
+it "the base image is recorded in the tags, so a published OMI is traceable"
+assert_status 0 grep -q 'SourceOMI' "$HCL"
 
-# The wrapper must check the OMI still exists: packer validate cannot, it only
-# requires source_omi to be non-empty. This is the failure mode that actually bit.
-WRAPPER="$(cd "$(dirname "$0")/.." && pwd)/build_scripts/build_and_deploy_redis_image_with_packer.sh"
-
-it "the wrapper resolves source_omi from the region map"
-assert_status 0 grep -q 'SOURCE_OMI=' "$WRAPPER"
-
-it "and verifies it exists via ReadImages before invoking packer"
-assert_status 0 grep -q 'ReadImages' "$WRAPPER"
-
-it "the check is skippable, so a stale ID never hard-blocks a deliberate build"
-assert_status 0 grep -q 'SKIP_OMI_CHECK' "$WRAPPER"
-
-it "and degrades quietly when oapi-cli is absent (the VM case)"
-assert_status 0 grep -q 'command -v oapi-cli' "$WRAPPER"
-
-it "the HCL declares the map, not a bare source_omi scalar"
-assert_status 0 grep -q 'variable "source_omi_by_region"' "$HCL"
-
-it "and the source block consumes the lookup"
-assert_status 0 grep -qE 'source_omi[[:space:]]+=[[:space:]]+local\.source_omi' "$HCL"
+it "and in the image description"
+assert_status 0 grep -q 'base \${var.source_omi}' "$HCL"
 
 it "the OMI name no longer claims to be AWS (T-18)"
 assert_status 1 grep -q 'lts-aws-' "$HCL"

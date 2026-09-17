@@ -50,6 +50,8 @@ if (( RUN_PACKER )); then
       | sed -nE 's#.*redislabs-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)-.*#\1#p'
   )"
   : "${LINT_REDIS_VERSION:=0.0.0-0}"
+  # Placeholder: lint checks the template, not that this image exists.
+  LINT_SOURCE_OMI="${LINT_SOURCE_OMI:-ami-00000000}"
   if command -v packer >/dev/null; then
     if packer fmt -check -diff packer/; then
       ok "packer fmt"
@@ -73,13 +75,14 @@ if (( RUN_PACKER )); then
          -var "keypair_private_file=$FAKE_KEY" \
          -var "keypair_name=lint-placeholder" \
          -var "redis_version=$LINT_REDIS_VERSION" \
+         -var "source_omi=$LINT_SOURCE_OMI" \
          "$PKR_FILE" >/dev/null; then
       ok "packer validate (region=$LINT_REGION)"
     else
       bad "packer validate"
       packer validate -var "region=$LINT_REGION" -var "keypair_private_file=$FAKE_KEY" \
         -var "keypair_name=lint-placeholder" -var "redis_version=$LINT_REDIS_VERSION" \
-        "$PKR_FILE" 2>&1 | sed 's/^/           /' | head -20
+        -var "source_omi=$LINT_SOURCE_OMI" "$PKR_FILE" 2>&1 | sed 's/^/           /' | head -20
     fi
     rm -f "$FAKE_KEY" "$FAKE_KEY.pub"
 
@@ -87,7 +90,7 @@ if (( RUN_PACKER )); then
     # guard is decorative.
     if packer validate -var "region=$LINT_REGION" -var "keypair_private_file=/dev/null" \
          -var "keypair_name=k" -var "redis_version=not-a-version" \
-         "$PKR_FILE" >/dev/null 2>&1; then
+         -var "source_omi=$LINT_SOURCE_OMI" "$PKR_FILE" >/dev/null 2>&1; then
       bad "the redis_version validation block does NOT reject a malformed version"
     else
       ok "redis_version validation rejects a malformed value"

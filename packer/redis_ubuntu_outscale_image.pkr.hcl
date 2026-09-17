@@ -44,37 +44,35 @@ variable "root_volume_size" {
   default = 30
 }
 
-# Base OMI per region.
+# Base OMI, resolved by build_and_deploy_redis_image_with_packer.sh.
 #
-# Kept as explicit IDs rather than resolved with source_omi_filter: the roadmap is to
-# publish one OMI per region, which means looping the build over regions with a
-# different base image (and probably a different network setup) per region. An
-# auto-resolving filter would hide exactly the mapping that needs to be explicit.
+# NOT pinned here on purpose. Outscale republishes Ubuntu 22.04 roughly every two
+# months and deregisters old images after about ten, so any ID committed to this file
+# expires -- the previous pin, ami-054f16b1, was already gone by 2026-09-17 and would
+# have failed the build after uploading the tarball.
 #
-# Ubuntu 22.04 LTS (Jammy) is the NEWEST release Redis Enterprise Software supports --
-# 24.04 is not on the supported-platforms list -- so this is not a legacy pin.
+# The wrapper resolves the newest official Ubuntu x86_64/bsu image by default, so a
+# rebuild picks up system patches along with the new Redis Enterprise version. To hold
+# the base steady -- shipping a Redis CVE fix while changing as little else as possible
+# -- set OUTSCALE_SOURCE_OMI=ami-xxxxxxxx.
 #
-# THESE IDS EXPIRE. Outscale publishes a refreshed Ubuntu 22.04 OMI roughly every two
-# months and deregisters the old ones after about ten. The previous pin here,
-# ami-054f16b1 (Ubuntu-22.04-2025.07.07), was already gone by 2026-09-17 -- ReadImages
-# returned an empty list -- which would have failed the next build. The wrapper now
-# checks the ID still exists before invoking packer.
-#
-# To refresh:
-#   oapi-cli --profile default ReadImages \
-#     --Filters '{"AccountAliases":["Outscale"],"Architectures":["x86_64"],"States":["available"]}' \
-#   | jq -r '.Images[] | select(.ImageName|test("ubuntu";"i"))
-#            | select(.ImageName|test("22[.-]?04"))
-#            | "\(.ImageId)  \(.ImageName)  \(.CreationDate)  \(.RootDeviceType)"' | sort -k3
-# Take the newest; it must be RootDeviceType=bsu and Architecture=x86_64.
-variable "source_omi_by_region" {
-  type        = map(string)
-  description = "Outscale region -> Ubuntu 22.04 LTS base OMI ID (published by account alias Outscale)"
-  default = {
-    # Ubuntu-22.04-2026-08-10, published 2026-08-10, bsu/x86_64, alias Outscale.
-    # Verified present 2026-09-17. Replaces ami-054f16b1, deregistered upstream.
-    "eu-west-2" = "ami-88dbc914"
+# Whichever path is taken, the ID and the image name are recorded in the OMI tags and
+# the description, so any published image can be traced back to its base.
+variable "source_omi" {
+  type        = string
+  description = "Ubuntu base OMI, resolved or pinned by the build wrapper"
+  default     = ""
+
+  validation {
+    condition     = can(regex("^(ami-[0-9a-f]+)?$", var.source_omi))
+    error_message = "The source_omi variable must be an Outscale OMI id such as ami-88dbc914. It is resolved by build_and_deploy_redis_image_with_packer.sh, so run that wrapper instead of invoking packer directly."
   }
+}
+
+variable "source_omi_name" {
+  type        = string
+  description = "Human-readable name of the base OMI, recorded in tags for traceability"
+  default     = ""
 }
 
 variable "redis_version" {
@@ -95,12 +93,15 @@ locals {
   # before AWS support was dropped in 2e95621 (TODO T-18).
   ami_name           = "packer-redis-enterprise-${var.redis_version}-ubuntu-22-lts-outscale-${local.ts}"
   redis_tarball_name = "redislabs-${var.redis_version}-jammy-amd64.tar"
-  source_omi         = lookup(var.source_omi_by_region, var.region, "")
   common_tags = {
     Name         = local.ami_name
     Project      = "redis-enterprise"
     RedisVersion = var.redis_version
     ManagedBy    = "packer"
+    # Which base image this was built from -- the only way to trace a published OMI
+    # back to its Ubuntu snapshot once the base has been deregistered upstream.
+    SourceOMI     = var.source_omi
+    SourceOMIName = var.source_omi_name
   }
 }
 
@@ -108,10 +109,10 @@ source "outscale-bsu" "ubuntu_base_for_redis_enterprise" {
   region  = var.region
   vm_type = var.build_instance_type
 
-  source_omi = local.source_omi
+  source_omi = var.source_omi
 
   omi_name        = local.ami_name
-  omi_description = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
+  omi_description = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts}), base ${var.source_omi} ${var.source_omi_name}"
 
   ssh_username     = "outscale"
   communicator     = "ssh"
