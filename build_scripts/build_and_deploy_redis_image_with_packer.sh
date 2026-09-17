@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
+# shellcheck source=/dev/null
 source "$(dirname "$0")/../_my_env.sh"
 
 HCL_FILE=../packer/redis_ubuntu_outscale_image.pkr.hcl
@@ -28,9 +30,9 @@ echo "REDIS_VERSION : '$REDIS_VERSION'"
 echo "Attendu par Packer: ../redis-software/redislabs-${REDIS_VERSION}-jammy-amd64.tar"
 
 # Parse optional -debug flag to enable Packer debug mode
-BUILD_OPTS=""
+BUILD_OPTS=()
 if [[ "${1:-}" == "-debug" ]]; then
-  BUILD_OPTS="-debug -on-error=ask"
+  BUILD_OPTS=(-debug -on-error=ask)
 fi
 
 
@@ -46,7 +48,7 @@ args=(
   -var "redis_version=${REDIS_VERSION}"
 )
 # optionnel: si BUILD_OPTS n'est pas vide, on l’ajoute proprement
-[[ -n "${BUILD_OPTS:-}" ]] && args+=($BUILD_OPTS)
+(( ${#BUILD_OPTS[@]} )) && args+=("${BUILD_OPTS[@]}")
 
 set -x  # pour voir exactement les args passés
 PACKER_LOG=1 PACKER_LOG_PATH=packer.out \

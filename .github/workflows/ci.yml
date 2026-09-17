@@ -1,0 +1,39 @@
+name: CI
+
+# Credential-free checks only: no Outscale access, no image build.
+# The Packer build itself is a host-side action (see the security model in the
+# project CLAUDE.md), so it is deliberately NOT run here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: shellcheck + packer validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Lint
+        # The Run repo is not checked out here, so the drift guard self-skips.
+        run: ./scripts/lint.sh
+
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: ./tests/run.sh

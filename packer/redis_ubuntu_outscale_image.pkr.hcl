@@ -14,8 +14,10 @@ variable "keypair_name" {
 }
 
 variable "keypair_private_file" {
-  type    = string
-  default = "/Users/thomas.manson/.ssh/outscale-tmanson-keypair.rsa"
+  type = string
+  # No default: always supplied by build_and_deploy_redis_image_with_packer.sh from
+  # $OUTSCALE_SSH_KEY. A hardcoded personal path used to live here (TODO T-07).
+  default = ""
 }
 
 variable "region" {

@@ -9,6 +9,8 @@ set -euo pipefail
 # Usage: ./osc-setup.sh 
 # Ex:    ./osc-setup.sh 
 
+# _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
+# shellcheck source=/dev/null
 source "$(dirname "$0")/../_my_env.sh"
 
 OAPI_PROFILE="default"

@@ -1,0 +1,8 @@
+### osc/osc-setup.sh
+### osc/tear_down_outscale.sh
+54c54
+< VM_IDS=($(echo "$READ_VMS" | jq -r '.Vms[]?.VmId' || true))
+---
+> mapfile -t VM_IDS < <(echo "$READ_VMS" | jq -r '.Vms[]?.VmId' || true)
+61a62
+> sleep 15
