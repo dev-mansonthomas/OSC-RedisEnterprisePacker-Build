@@ -40,19 +40,57 @@ fi
 
 # ---------- packer ----------
 if (( RUN_PACKER )); then
-  step "packer fmt / validate"
+  step "packer fmt / init / validate"
+  # The tarball named by redis_version must exist for the file provisioner to
+  # validate, so lint uses whatever version is actually on disk when there is one.
+  PKR_FILE="packer/redis_ubuntu_outscale_image.pkr.hcl"
+  LINT_REGION="${LINT_REGION:-eu-west-2}"
+  LINT_REDIS_VERSION="$(
+    ls redis-software/redislabs-*.tar 2>/dev/null | head -1 \
+      | sed -nE 's#.*redislabs-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)-.*#\1#p'
+  )"
+  : "${LINT_REDIS_VERSION:=0.0.0-0}"
   if command -v packer >/dev/null; then
     if packer fmt -check -diff packer/; then
       ok "packer fmt"
     else
       bad "packer fmt -check (run: packer fmt packer/)"
     fi
-    # validate needs the plugin; init is credential-free
-    if packer init packer/redis_ubuntu_outscale_image.pkr.hcl >/dev/null \
-       && packer validate -syntax-only packer/redis_ubuntu_outscale_image.pkr.hcl; then
-      ok "packer validate -syntax-only"
+    # init downloads the plugin; both init and validate are credential-free.
+    # validate insists on a readable ssh_private_key_file and a well-formed
+    # redis_version, so feed it a throwaway key and a placeholder version -- we are
+    # checking the template, not the configuration.
+    if packer init "$PKR_FILE" >/dev/null; then
+      ok "packer init"
+    else
+      bad "packer init (plugin download failed?)"
+    fi
+
+    FAKE_KEY="$(mktemp -u)"
+    ssh-keygen -q -t rsa -b 2048 -N '' -f "$FAKE_KEY" </dev/null >/dev/null 2>&1
+    if packer validate \
+         -var "region=$LINT_REGION" \
+         -var "keypair_private_file=$FAKE_KEY" \
+         -var "keypair_name=lint-placeholder" \
+         -var "redis_version=$LINT_REDIS_VERSION" \
+         "$PKR_FILE" >/dev/null; then
+      ok "packer validate (region=$LINT_REGION)"
     else
       bad "packer validate"
+      packer validate -var "region=$LINT_REGION" -var "keypair_private_file=$FAKE_KEY" \
+        -var "keypair_name=lint-placeholder" -var "redis_version=$LINT_REDIS_VERSION" \
+        "$PKR_FILE" 2>&1 | sed 's/^/           /' | head -20
+    fi
+    rm -f "$FAKE_KEY" "$FAKE_KEY.pub"
+
+    # The redis_version validation block must actually reject a bad value, or the
+    # guard is decorative.
+    if packer validate -var "region=$LINT_REGION" -var "keypair_private_file=/dev/null" \
+         -var "keypair_name=k" -var "redis_version=not-a-version" \
+         "$PKR_FILE" >/dev/null 2>&1; then
+      bad "the redis_version validation block does NOT reject a malformed version"
+    else
+      ok "redis_version validation rejects a malformed value"
     fi
   else
     printf '    \033[33mSKIP\033[0m packer not installed in this environment\n'

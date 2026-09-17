@@ -72,7 +72,7 @@ variable "redis_version" {
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+$", var.redis_version))
-    error_message = "redis_version must look like 8.0.2-41 (maj.min.patch-build). It is passed by build_and_deploy_redis_image_with_packer.sh; run that instead of packer directly."
+    error_message = "The redis_version variable must look like 8.0.2-41 (maj.min.patch-build). It is supplied by build_and_deploy_redis_image_with_packer.sh, so run that wrapper instead of invoking packer directly."
   }
 }
 
@@ -93,38 +93,41 @@ locals {
 }
 
 source "outscale-bsu" "ubuntu_base_for_redis_enterprise" {
-  region                        = var.region
-  vm_type                       = var.build_instance_type
-  
-  source_omi                    = local.source_omi
+  region  = var.region
+  vm_type = var.build_instance_type
 
-  omi_name                      = local.ami_name
-  omi_description               = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
+  source_omi = local.source_omi
 
-  ssh_username                  = "outscale"
-  communicator                  = "ssh"
-  ssh_interface                 = "public_ip"
-  ssh_keypair_name              = var.keypair_name
+  omi_name        = local.ami_name
+  omi_description = "Redis Enterprise ${var.redis_version} on Ubuntu 22.04 LTS (${local.ts})"
+
+  ssh_username     = "outscale"
+  communicator     = "ssh"
+  ssh_interface    = "public_ip"
+  ssh_keypair_name = var.keypair_name
   //todo generate & register keypair
-  ssh_private_key_file          = var.keypair_private_file
+  ssh_private_key_file = var.keypair_private_file
 
-  ssh_timeout                   = "20m"   # more robust after reboot
+  ssh_timeout = "20m" # more robust after reboot
 
   launch_block_device_mappings {
-    device_name                 = "/dev/sda1"
-    volume_size                 = var.root_volume_size
-    volume_type                 = "gp2"
-    delete_on_vm_deletion       = true
+    device_name           = "/dev/sda1"
+    volume_size           = var.root_volume_size
+    volume_type           = "gp2"
+    delete_on_vm_deletion = true
   }
 
-  force_deregister              = true           # rebuild idempotent
-  force_delete_snapshot         = true
+  force_deregister      = true # rebuild idempotent
+  force_delete_snapshot = true
 
-  tags                          = local.common_tags
-  snapshot_tags                 = local.common_tags
+  tags          = local.common_tags
+  snapshot_tags = local.common_tags
 }
 
 build {
+  # Provisioner sources use path.root (the template's own directory) rather than
+  # CWD-relative paths, so packer validate/build work from anywhere. They used to
+  # require being invoked from build_scripts/ (TODO T-08).
   name    = "ubuntu-ufw-lts"
   sources = ["source.outscale-bsu.ubuntu_base_for_redis_enterprise"]
 
@@ -134,17 +137,17 @@ build {
   }
 
   provisioner "file" {
-    source      = "../image_scripts/prepare-and-install-redis-install.sh"
+    source      = "${path.root}/../image_scripts/prepare-and-install-redis-install.sh"
     destination = "/home/outscale/prepare-and-install-redis-install.sh"
   }
 
   provisioner "file" {
-    source      = "../image_scripts/redis-install-answers.txt" # corrige la coquille
+    source      = "${path.root}/../image_scripts/redis-install-answers.txt" # corrige la coquille
     destination = "/home/outscale/redis-install-answers.txt"
   }
 
   provisioner "file" {
-    source      = "../redis-software/${local.redis_tarball_name}"
+    source      = "${path.root}/../redis-software/${local.redis_tarball_name}"
     destination = "/home/outscale/redis-enterprise.tar"
   }
 

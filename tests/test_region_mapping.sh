@@ -37,7 +37,23 @@ assert_status 1 grep -qE '/Users/[a-z]' "$HCL"
 it "redis_version has no stale default (T-07)"
 assert_status 1 grep -qE 'default[[:space:]]*=[[:space:]]*"7\.22' "$HCL"
 
-it "redis_version carries a format validation"
-assert_status 0 grep -q 'redis_version must look like' "$HCL"
+# Asserted structurally, not on the message wording: the exact text changed once
+# already (packer rejects a message that does not start with a capital), and
+# scripts/lint.sh proves the SEMANTICS by checking packer really rejects a bad value.
+it "redis_version declares a validation block"
+assert_status 0 grep -q 'validation {' "$HCL"
+
+it "whose condition constrains redis_version to maj.min.patch-build"
+assert_status 0 grep -qE 'condition.*regex.*var\.redis_version' "$HCL"
+
+it "and whose error message satisfies packer's own rule (capital first, ends in . or ?)"
+msg="$(sed -nE 's/^[[:space:]]*error_message[[:space:]]*=[[:space:]]*"(.*)"[[:space:]]*$/\1/p' "$HCL" | head -1)"
+assert_status 0 grep -qE '^[A-Z].*[.?]$' <<<"$msg"
+
+it "provisioner sources are anchored on path.root, not the CWD (T-08)"
+assert_eq "0" "$(grep -cE 'source[[:space:]]+=[[:space:]]+"\.\./' "$HCL")"
+
+it "all three provisioner sources use path.root"
+assert_eq "3" "$(grep -cE 'source[[:space:]]+=[[:space:]]+"\$\{path\.root\}/' "$HCL")"
 
 finish

@@ -81,16 +81,18 @@ Outscale credentials, so the build is a **host-side action**. Credential-free ch
 run in the VM:
 
 ```sh
-./scripts/lint.sh              # shellcheck + packer fmt/validate + drift guard + secret scan
-./scripts/lint.sh --no-packer  # same, when packer is absent (still the case in the VM)
+./scripts/lint.sh              # shellcheck + packer fmt/init/validate + drift guard + secret scan
+./scripts/lint.sh --no-packer  # same, minus packer (for a VM rebuilt without it)
 ./tests/run.sh                 # 66 unit/integration tests, no network, no credentials
 ```
 
 Both are what CI runs (`.github/workflows/ci.yml`). The Packer build itself is
 deliberately **not** in CI: it needs Outscale credentials and is a host action.
 
-> `packer` is missing from `scripts/vm-provision.sh`. Add it — `packer fmt`/`validate`/`init`
-> are credential-free and belong in the VM (same posture as `tofu validate`). `oapi-cli` stays
+> `packer` **1.16.0** is installed in the VM (outscale plugin v1.6.1). It was added by hand on
+> 2026-09-17, so it will disappear on the next VM rebuild unless `packer` is added to
+> `scripts/vm-provision.sh` in the `claude-code-dev-setup` repo. `packer fmt`/`init`/`validate`
+> are credential-free and belong here (same posture as `tofu validate`); `oapi-cli` stays
 > host-only by design.
 
 ### Success criteria
