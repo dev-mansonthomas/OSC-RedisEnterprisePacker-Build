@@ -127,6 +127,13 @@ assert_status 0 grep -qE '^rm -rf /home/\$USER/redis-enterprise$' "$P"
 it "removes the gnupg home holding the imported signing key"
 assert_contains "$(cat "$P")" "rm -rf /home/\$USER/.gnupg"
 
+it "removes the provisioning script Packer uploaded"
+# Found still present on a VM launched from ami-57a302f4.
+assert_contains "$(cat "$P")" "rm -f  /home/\$USER/prepare-and-install-redis-install.sh"
+
+it "and the installer answer file"
+assert_contains "$(cat "$P")" "rm -f  /home/\$USER/redis-install-answers.txt"
+
 it "cleans the apt cache"
 assert_contains "$(cat "$P")" "apt-get clean"
 

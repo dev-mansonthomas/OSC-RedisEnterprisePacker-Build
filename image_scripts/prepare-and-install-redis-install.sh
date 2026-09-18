@@ -412,6 +412,10 @@ rm -f  /home/$USER/redis-enterprise.tar
 rm -rf /home/$USER/redis-enterprise
 rm -rf /home/$USER/.gnupg /root/.gnupg
 rm -f  /etc/resolv.conf.orig
+# This script itself, uploaded by Packer. Confirmed still present on a VM launched from
+# ami-57a302f4: it describes how the image was built and has no business in it.
+rm -f  /home/$USER/prepare-and-install-redis-install.sh
+rm -f  /home/$USER/redis-install-answers.txt
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 echo "Root filesystem usage after cleanup:"
