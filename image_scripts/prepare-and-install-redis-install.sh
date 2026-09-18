@@ -55,15 +55,6 @@ if [ "$apt_update_ok" -ne 1 ]; then
   exit 1
 fi
 
-# Fail here, with a clear reason, rather than later on a confusing "Unable to locate".
-for pkg in iotop netcat-openbsd; do
-  if ! apt-cache policy "$pkg" 2>/dev/null | grep -q 'Candidate: [0-9]'; then
-    echo "ERROR: package '$pkg' is not available. The universe component or the" >&2
-    echo "       ${UBUNTU_CODENAME} release pocket is missing from the APT sources." >&2
-    exit 1
-  fi
-done
-
 apt-get upgrade -y
 
 # --- Wait upgrade to complete, otherwise there might be some issues installing dpkg-sig ---
@@ -105,15 +96,48 @@ umask 0022
 #apt-get install -y auditd
 # 
 
-#--- dpkg-sig: optional cross-check only ---
-# The authoritative .deb signature check is done with gpg further down, so a missing
-# dpkg-sig must not fail the build.
-apt-get install -y dpkg-sig || echo "WARNING: dpkg-sig unavailable; gpg check is authoritative" >&2
+# --- Hard requirements ---
+# The .deb signature check needs gpg and ar, both in the base system. Asserted rather
+# than installed, and the build must not continue without them: skipping signature
+# verification is not an acceptable degradation.
+for req in gpg ar; do
+  command -v "$req" >/dev/null || {
+    echo "ERROR: '$req' is required to verify the Redis package signature" >&2
+    exit 1
+  }
+done
+echo "Signature verification tooling present: gpg, ar."
 
-# --- Install utilities ---
-# netcat-openbsd rather than the transitional 'netcat' virtual package, which
-# resolves differently depending on which components are enabled.
-apt-get -y install vim iotop iputils-ping curl jq netcat-openbsd dnsutils
+# --- Operator conveniences: best effort, never fatal ---
+# None of these is needed by Redis Enterprise. The build of 2026-09-18 10:26 aborted
+# because 'iotop' was judged unavailable, which is the wrong trade: a ~5 minute build
+# and a publishable image should not be lost over a diagnostic tool. Installed one at a
+# time so one bad package cannot take the rest down with it, and the failures are
+# reported together at the end.
+#
+# dpkg-sig is in this list now: it is only an optional cross-check of the gpg
+# verification, and it is the universe-only package that broke the 10:07 build.
+UTILS="vim iotop iputils-ping curl jq netcat-openbsd dnsutils dpkg-sig"
+missing_utils=""
+for pkg in $UTILS; do
+  if apt-get install -y "$pkg" >/dev/null 2>&1; then
+    echo "  installed $pkg"
+  else
+    echo "  WARNING: could not install $pkg" >&2
+    missing_utils="$missing_utils $pkg"
+  fi
+done
+
+if [ -n "$missing_utils" ]; then
+  echo "WARNING: these convenience packages are absent from the image:$missing_utils" >&2
+  echo "         The build continues: none of them is required by Redis Enterprise." >&2
+  # Printed for diagnosis, because a missing universe package usually means the APT
+  # sources are wrong -- which is what the 10:07 failure actually was.
+  for pkg in $missing_utils; do
+    echo "--- apt-cache policy $pkg ---" >&2
+    apt-cache policy "$pkg" >&2 2>&1 || true
+  done
+fi
 
 # --- Disable swap permanently ---
 swapoff -a

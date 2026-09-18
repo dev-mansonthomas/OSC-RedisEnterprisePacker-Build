@@ -44,8 +44,25 @@ assert_contains "$(cat "$P")" "main restricted universe multiverse"
 it "retries apt-get update instead of failing on a transient mirror error"
 assert_contains "$(cat "$P")" "retrying in 10s"
 
-it "fails with a clear reason when a universe package is unavailable"
-assert_contains "$(cat "$P")" "is not available. The universe component"
+it "does NOT abort the build over a convenience package"
+# The 10:26 build died because iotop was judged unavailable. A diagnostic tool is not
+# worth a ~5 minute build and a publishable image.
+assert_contains "$(cat "$P")" "none of them is required by Redis Enterprise"
+
+it "installs conveniences one at a time, so one bad package cannot block the rest"
+assert_status 0 grep -qF 'for pkg in $UTILS; do' "$P"
+
+it "prints apt-cache policy for whatever it could not install, for diagnosis"
+assert_status 0 grep -qF 'apt-cache policy "$pkg"' "$P"
+
+it "but DOES abort when the signature tooling is missing"
+assert_contains "$(sed -n '/Hard requirements/,/Signature verification tooling/p' "$P")" "exit 1"
+
+it "requires gpg and ar, the two things the signature check cannot do without"
+assert_contains "$(cat "$P")" 'for req in gpg ar; do'
+
+it "treats dpkg-sig as a convenience, not a requirement"
+assert_status 0 grep -qE '^UTILS=.*dpkg-sig' "$P"
 
 it "prints the APT sources actually in effect, for post-mortem"
 assert_contains "$(cat "$P")" "APT sources in effect"
@@ -61,7 +78,7 @@ it "verifies the .deb with gpg directly, not through dpkg-sig"
 assert_contains "$(cat "$P")" "verify_deb_signature"
 
 it "treats a missing dpkg-sig as non-fatal -- gpg is the authority"
-assert_contains "$(cat "$P")" "dpkg-sig unavailable; gpg check is authoritative"
+assert_contains "$(cat "$P")" "only an optional cross-check"
 
 it "still cross-checks with dpkg-sig when it is installed"
 assert_contains "$(cat "$P")" "dpkg-sig cross-check agrees"
