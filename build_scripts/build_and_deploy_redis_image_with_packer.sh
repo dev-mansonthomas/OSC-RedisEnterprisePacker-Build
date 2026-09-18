@@ -9,7 +9,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # without editing the operator's configuration.
 _ENV_OVERRIDES=()
 for _v in OUTSCALE_REGION OUTSCALE_SSH_KEY OUTSCALE_KEYPAIR_NAME OUTSCALE_SOURCE_OMI \
-          OAPI_PROFILE UBUNTU_RELEASE MANIFEST_FILE ENV_FILE; do
+          OAPI_PROFILE UBUNTU_RELEASE MANIFEST_FILE ENV_FILE \
+          BUILD_LOG_DIR BUILD_LOG_KEEP PACKER_OUT_LINK; do
   [[ -n "${!_v:-}" ]] && _ENV_OVERRIDES+=("$_v=${!_v}")
 done
 
@@ -151,10 +152,42 @@ packer validate "${args[@]}" "$HCL_FILE"
 
 (( ${#BUILD_OPTS[@]} )) && args+=("${BUILD_OPTS[@]}")
 
+# --- Journalisation du build ---
+# packer.out était écrasé à chaque build : la trace du build précédent était perdue,
+# alors que c'est la seule preuve de ce qu'une OMI publiée contient. Chaque build écrit
+# donc un log horodaté dans debug/build-logs/, et packer.out devient un lien vers le
+# dernier (le nom est conservé : le README et les habitudes y font référence).
+BUILD_LOG_DIR="${BUILD_LOG_DIR:-$REPO_ROOT/debug/build-logs}"
+BUILD_LOG_KEEP="${BUILD_LOG_KEEP:-10}"
+mkdir -p "$BUILD_LOG_DIR"
+BUILD_LOG="$BUILD_LOG_DIR/packer-$(date -u +%Y%m%dT%H%M%SZ)-${REDIS_VERSION}.log"
+
+echo "Journal du build : ${BUILD_LOG#"$REPO_ROOT/"}"
+
 set -x  # pour voir exactement les args passés
-PACKER_LOG=1 PACKER_LOG_PATH=packer.out \
+PACKER_LOG=1 PACKER_LOG_PATH="$BUILD_LOG" \
   packer build "${args[@]}" "$HCL_FILE"
 set +x
+
+# packer.out : lien vers le dernier log, pour ne pas casser les usages existants.
+# Surchargeable, et volontairement : un test exécutant ce script avec un BUILD_LOG_DIR
+# temporaire a déjà remplacé le packer.out réel par un lien vers ce temporaire, puis
+# détruit la cible -- le journal d'un vrai build a été perdu ainsi.
+PACKER_OUT_LINK="${PACKER_OUT_LINK:-$REPO_ROOT/build_scripts/packer.out}"
+ln -sfn "$BUILD_LOG" "$PACKER_OUT_LINK"
+
+# Rotation : les logs font ~350 Ko chacun.
+# Noms générés par nous (packer-<ISO>-<version>.log) donc triables lexicalement :
+# pas besoin de ls -t, ce qui évite de parser une sortie de ls.
+mapfile -t _old_logs < <(
+  printf '%s\n' "$BUILD_LOG_DIR"/packer-*.log \
+    | grep -v '\*' | sort -r | tail -n +"$((BUILD_LOG_KEEP + 1))"
+)
+if (( ${#_old_logs[@]} )); then
+  echo "Rotation des journaux : suppression de ${#_old_logs[@]} log(s) au-delà de $BUILD_LOG_KEEP"
+  rm -f "${_old_logs[@]}"
+fi
+unset _old_logs
 
 # --- Extract the OMI ID from manifest.json ---
 # This value is what OSC-RedisEnterprisePacker-Run consumes to launch nodes, so a
@@ -192,6 +225,20 @@ echo "OUTSCALE_AMI_ID for Outscale in region $TARGET_REGION: $AMI_ID"
 # `source` silently kept the last one (TODO T-01).
 env_write_block "$ENV_FILE" outscale-omi "OUTSCALE_AMI_ID=$AMI_ID"
 echo "OUTSCALE_AMI_ID written to $ENV_FILE"
+
+# Résumé lisible à côté du journal : un log de 350 Ko ne dit pas d'un coup d'oeil quelle
+# OMI il a produite ni sur quelle base.
+cat > "${BUILD_LOG%.log}.summary.txt" <<SUMMARY
+build_finished   $(date -u +%Y-%m-%dT%H:%M:%SZ)
+omi_id           $AMI_ID
+omi_region       $TARGET_REGION
+redis_version    $REDIS_VERSION
+source_omi       $SOURCE_OMI
+source_omi_name  $SOURCE_OMI_NAME
+ubuntu_release   $UBUNTU_RELEASE
+packer_log       ${BUILD_LOG#"$REPO_ROOT/"}
+SUMMARY
+echo "Résumé du build : ${BUILD_LOG%.log}.summary.txt" | sed "s#$REPO_ROOT/##"
 
 # --- Le build a réussi : les tarballs de la version précédente ne servent plus ---
 # fetch_redis_tarball.sh les parque dans redis-software/old/ au lieu de les supprimer,

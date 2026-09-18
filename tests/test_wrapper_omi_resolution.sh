@@ -57,7 +57,8 @@ run_wrapper() {
   WRAP_RC=0
   env PATH="$STUBS:$PATH" PACKER_ARGS_LOG="$ARGS_LOG" \
       OUTSCALE_SSH_KEY="$FAKE_KEY" FETCH_OPTS=--skip-version-check \
-      MANIFEST_FILE="$STUBS/manifest.json" ENV_FILE="$STUBS/_my_env.out" "$@" \
+      MANIFEST_FILE="$STUBS/manifest.json" ENV_FILE="$STUBS/_my_env.out" \
+      PACKER_OUT_LINK="$STUBS/packer.out" "$@" \
       bash -c "cd '$ROOT/build_scripts' && ./build_and_deploy_redis_image_with_packer.sh" \
       > "$WRAP_OUT" 2>&1 || WRAP_RC=$?
 }
@@ -143,5 +144,37 @@ it "and KEEPS old/ so the previous version can still be retried"
 assert_status 0 test -f "$PARKED"
 
 rm -rf "$SW/old"
+
+# ---------- build logging ----------
+# packer.out used to be overwritten every build, losing the only record of what a
+# published OMI actually contains.
+LOGS="$STUBS/logs"
+run_wrapper STUB_MANIFEST=1 BUILD_LOG_DIR="$LOGS"
+
+it "announces where the build is being logged"
+assert_contains "$(out)" "Journal du build"
+
+it "writes a timestamped log name carrying the Redis version"
+assert_status 0 bash -c 'ls "$1"/packer-*Z-8.2.0-78.* >/dev/null 2>&1' _ "$LOGS"
+
+it "writes a summary beside it, so a 350 KB log is self-describing"
+assert_contains "$(cat "$LOGS"/*.summary.txt)" "omi_id           ami-0badc0de"
+
+it "the summary records the base OMI the image was built from"
+assert_contains "$(cat "$LOGS"/*.summary.txt)" "source_omi       ami-88dbc914"
+
+it "and its human-readable name"
+assert_contains "$(cat "$LOGS"/*.summary.txt)" "Ubuntu-22.04-2026-08-10"
+
+it "rotates old logs, keeping BUILD_LOG_KEEP of them"
+for i in 1 2 3 4 5; do : > "$LOGS/packer-2020010${i}T000000Z-0.0.0-0.log"; done
+run_wrapper STUB_MANIFEST=1 BUILD_LOG_DIR="$LOGS" BUILD_LOG_KEEP=3
+assert_eq "3" "$(find "$LOGS" -name 'packer-*.log' | wc -l)"
+
+it "and keeps the NEWEST ones"
+assert_eq "" "$(find "$LOGS" -name 'packer-20200101T000000Z-*' -print -quit)"
+
+it "never touches the repo's own packer.out when given PACKER_OUT_LINK"
+assert_contains "$(readlink "$STUBS/packer.out")" "$LOGS"
 
 finish

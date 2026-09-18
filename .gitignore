@@ -47,9 +47,13 @@ redis-software/*
 # build_and_deploy_redis_image_with_packer.sh pour extraire l'OMI ID -- ne pas le
 # supprimer localement, il porte aussi l'historique des builds (cf. TODO T-33).
 build_scripts/manifest.json
-build_scripts/packer.out
 build_scripts/install.log
 .DS_Store
+# Journaux de build (~350 Ko chacun) et scratch partage avec l'hote.
+debug/
+# Lien vers le dernier journal, genere par le wrapper.
+build_scripts/packer.out
+
 # Configuration locale de l'operateur: contient les IDs de ressources generes.
 _my_env.sh
 # Materiel de cle privee, quelle que soit sa provenance.
