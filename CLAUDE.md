@@ -25,7 +25,7 @@ baked in, so one image fits every customer.
 | Builder | `outscale-bsu` | BSU = Outscale's EBS equivalent |
 | Cloud API | `oapi-cli` (Outscale API CLI) | profile `default` from `~/.osc/config.json` |
 | Guest OS | Ubuntu 22.04 LTS (Jammy) | source OMI `ami-054f16b1` (eu-west-2, 2025.07.07) |
-| Payload | Redis Enterprise Software `8.0.2-41` | `redis-software/redislabs-8.0.2-41-jammy-amd64.tar` (993 MB, git-ignored) |
+| Payload | Redis Enterprise Software `8.2.0-78` | `redis-software/` (343 MB, git-ignored, fetched automatically) |
 | Glue | Bash 5.x / zsh + `jq` | no Terraform/OpenTofu, no Python, no CI |
 | Tests | **none** | no test suite, no linter config, no CI workflow — see `docs/TODO.md` |
 
@@ -100,10 +100,18 @@ deliberately **not** in CI: it needs Outscale credentials and is a host action.
 
 ### Success criteria
 
-`build_scripts/manifest.json` gains a new `builds[]` entry, `last_run_uuid` points at it, and
-`OUTSCALE_AMI_ID=ami-xxxxxxxx` is appended to `_my_env.sh`. Last known-good run:
-**2025-11-25, `eu-west-2:ami-06426132`**, image
-`packer-redis-enterprise-8.0.2-41-ubuntu-22-lts-aws-20251125-1439`, `rlcheck` → `ALL TESTS PASSED`.
+`build_scripts/manifest.json` gains a `builds[]` entry matching `last_run_uuid`, `_my_env.sh`'s
+`outscale-omi` block holds the new `OUTSCALE_AMI_ID`, and `rlcheck` reports `ALL TESTS PASSED`
+in the log.
+
+Each build writes `debug/build-logs/packer-<ISO8601>-<version>.log` plus a `.summary.txt`
+recording the OMI id, the Redis version and the base OMI it was built from.
+`build_scripts/packer.out` symlinks to the latest. Rotation keeps 10.
+
+Last known-good run: **2026-09-18, `eu-west-2:ami-5e9d1a76`**, image
+`packer-redis-enterprise-8.2.0-78-ubuntu-22-lts-outscale-20260918-0021`, base
+`ami-88dbc914` (`Ubuntu-22.04-2026-08-10`), Redis Enterprise **8.2.0-78**, `rlcheck`
+→ `ALL TESTS PASSED`, `.deb` signature `GOODSIG … EC5EC593D7D1529F`, ~4 min.
 
 ## Module map
 
@@ -194,7 +202,8 @@ sourcing it and restores them after — **the environment wins over the file**, 
 what makes one-off overrides and the test suite possible:
 
 `OUTSCALE_REGION` · `OUTSCALE_SSH_KEY` · `OUTSCALE_KEYPAIR_NAME` ·
-`OUTSCALE_SOURCE_OMI` · `OAPI_PROFILE` · `UBUNTU_RELEASE` · `MANIFEST_FILE` · `ENV_FILE`
+`OUTSCALE_SOURCE_OMI` · `OAPI_PROFILE` · `UBUNTU_RELEASE` · `MANIFEST_FILE` · `ENV_FILE` ·
+`BUILD_LOG_DIR` · `BUILD_LOG_KEEP` · `PACKER_OUT_LINK`
 
 Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 

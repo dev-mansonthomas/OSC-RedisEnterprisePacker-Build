@@ -224,8 +224,10 @@ validation, and this is where the schedule needs slack.
 PRs 1-4 are implemented on `feat/build-remediation-pr1-4` (5 commits, docs first).
 All VM-verifiable gates pass: `scripts/lint.sh` clean, **66 tests** green.
 
-**Outstanding before PR 6 can start:** one **host** build to confirm PRs 1-4 changed
-nothing functionally. That is PR 4's gate and it cannot be run from the VM.
+**PR 4's host-build gate is MET.** Build of 2026-09-18 succeeded: `eu-west-2:ami-5e9d1a76`,
+Redis Enterprise 8.2.0-78 on base `ami-88dbc914` (`Ubuntu-22.04-2026-08-10`), `rlcheck`
+`ALL TESTS PASSED`, `.deb` signature verified, base-OMI auto-resolution and the `old/`
+purge both confirmed working. PR 6 is unblocked.
 
 | Finding | State |
 |---|---|
