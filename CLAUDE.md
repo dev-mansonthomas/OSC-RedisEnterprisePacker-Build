@@ -245,6 +245,8 @@ Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 - `docs/architecture/build-and-run-overview.md` — **start here**: end-to-end Build→OMI→Run
 - `docs/architecture/overview.md` — this repo's internals, with diagrams
 - `docs/findings.md` — **what to improve in this repo**, prioritised
+- `docs/reference/hardening-baseline.md` — SSH/UFW/AppArmor/audit state and listening
+  ports **measured on a real image**; the reference PRs 7-10 modify
 - `docs/handover-run-findings.md` — Run-phase findings, **parked**; do not fix them from here
 - `docs/specs/*.md` — per-script contracts (inputs, outputs, edge cases, acceptance criteria)
 - `docs/adr/*.md` — decisions and why
