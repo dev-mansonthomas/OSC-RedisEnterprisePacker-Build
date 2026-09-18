@@ -82,4 +82,36 @@ it "accepts a pinned version equal to the local one"
 assert_contains "$(run_in "$S" --version 8.0.2-41)" "Up to date."
 rm -rf "$S"
 
+# ---------- a new download parks the superseded tarball in old/ ----------
+# Exercised with a local file:// URL so no ~350 MB transfer is involved.
+S="$(make_sandbox)"
+echo "old payload" > "$S/redis-software/redislabs-8.0.2-41-jammy-amd64.tar"
+SERVE="$(mktemp -d)"; mkdir -p "$SERVE/8.2.0"
+echo "new payload" > "$SERVE/8.2.0/redislabs-8.2.0-78-jammy-amd64.tar"
+out="$( cd "$S" && REDIS_DOWNLOAD_BASE_URL="file://$SERVE" \
+        bash build_scripts/fetch_redis_tarball.sh --download --version 8.2.0-78 2>&1 )"
+
+it "downloads the new version"
+assert_contains "$out" "redislabs-8.2.0-78-jammy-amd64.tar"
+
+it "reports that it parked the previous one"
+assert_contains "$out" "Moved"
+
+it "the new tarball is the only one at the top level"
+assert_eq "1" "$(find "$S/redis-software" -maxdepth 1 -name 'redislabs-*.tar' | wc -l)"
+
+it "and it is the new version"
+assert_eq "redislabs-8.2.0-78-jammy-amd64.tar" "$(basename "$(find "$S/redis-software" -maxdepth 1 -name 'redislabs-*.tar')")"
+
+it "the superseded tarball is in old/, not deleted -- a failed build can roll back"
+assert_eq "redislabs-8.0.2-41-jammy-amd64.tar" "$(basename "$(find "$S/redis-software/old" -name 'redislabs-*.tar')")"
+
+it "and its content is intact"
+assert_eq "old payload" "$(cat "$S/redis-software/old/redislabs-8.0.2-41-jammy-amd64.tar")"
+
+it "a parked tarball does not make the inventory ambiguous"
+assert_contains "$( cd "$S" && bash build_scripts/fetch_redis_tarball.sh --skip-version-check 2>&1 )" \
+  "REDIS_VERSION=8.2.0-78"
+rm -rf "$S" "$SERVE"
+
 finish

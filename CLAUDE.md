@@ -57,9 +57,8 @@ three scripts (see *Gotchas*).
 ### The three commands, in order
 
 ```sh
-# 0. Check which Redis Enterprise version you have vs the latest; fetch if needed
-./build_scripts/fetch_redis_tarball.sh            # report only
-./build_scripts/fetch_redis_tarball.sh --download # fetch the latest
+# 0. Optional — the build does this itself (FETCH_OPTS defaults to --download)
+./build_scripts/fetch_redis_tarball.sh            # report only, no download
 
 # 1. Provision the Outscale Net / IGW / route table / 3 subnets / security group
 ./osc/osc-setup.sh
@@ -69,6 +68,7 @@ three scripts (see *Gotchas*).
 #    -debug                              → packer -debug -on-error=ask
 #    OUTSCALE_SOURCE_OMI=ami-xxxxxxxx …  → pin the Ubuntu base (CVE-only rebuild)
 #    UBUNTU_RELEASE=22.04                → override the release to look for
+#    FETCH_OPTS=""                       → build what is on disk, don't download
 
 # 3. Destroy everything created in step 1 (and any VM still in the Net)
 ./osc/tear_down_outscale.sh
@@ -117,7 +117,8 @@ deliberately **not** in CI: it needs Outscale credentials and is a host action.
 | `image_scripts/redis-install-answers.txt` | Unattended answers for Redis Enterprise `install.sh`: `systune=yes`, `rlcheck=yes`, `firewall=no`, `ntp=no`, `ignore_swap=no`. |
 | `build_scripts/manifest.json`, `build_scripts/packer.out` | Build artefacts. Listed in `.gitignore` but `manifest.json` is *needed* by the wrapper — keep it locally. |
 | `_my_env.sh` / `_my_env.template.sh` | Local config + append-only generated state. Git-ignored. |
-| `redis-software/` | Drop the Redis Enterprise Jammy tarball here. Git-ignored except `SHA256SUMS`. |
+| `redis-software/` | The Redis Enterprise Jammy tarball. Git-ignored except `SHA256SUMS`. Fetched automatically by the build. |
+| `redis-software/old/` | Superseded tarballs, parked here on download rather than deleted so a failed build can be retried against the previous version. **Emptied automatically once a build succeeds** — that is the only thing that reclaims the ~350 MB–1 GB. |
 | *(removed)* | `image_scripts/create-or-join-redis-cluster.sh` was deleted in PR 2 — it was never part of the image (the Packer template uploads only the provisioning script, the answers file and the tarball). The live copy belongs to `-Run`. Don't re-add it here. |
 
 ## Conventions
@@ -185,6 +186,17 @@ deliberately **not** in CI: it needs Outscale credentials and is a host action.
     `build_and_deploy_redis_image_with_packer.sh` (the README's
     `build_and_deploy_image_with_packer.sh outscale` is wrong on both name and argument — the
     only accepted argument is `-debug`).
+
+## Overridable knobs
+
+`_my_env.sh` assigns unconditionally, so the build wrapper snapshots these before
+sourcing it and restores them after — **the environment wins over the file**, which is
+what makes one-off overrides and the test suite possible:
+
+`OUTSCALE_REGION` · `OUTSCALE_SSH_KEY` · `OUTSCALE_KEYPAIR_NAME` ·
+`OUTSCALE_SOURCE_OMI` · `OAPI_PROFILE` · `UBUNTU_RELEASE` · `MANIFEST_FILE` · `ENV_FILE`
+
+Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 
 ## Confirmed project decisions
 

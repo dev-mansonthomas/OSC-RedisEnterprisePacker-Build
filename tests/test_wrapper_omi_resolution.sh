@@ -29,9 +29,16 @@ cat "$ROOT/tests/fixtures/readimages-ubuntu.json"
 STUB
 
 # --- stub packer: record the args it was handed, then succeed
+# Records its arguments. On `build`, and only when STUB_MANIFEST is set, it also
+# writes a plausible manifest so the wrapper reaches its post-build steps (OMI-id
+# extraction, old/ purge). Without it, the build looks like it produced nothing.
 cat > "$STUBS/packer" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${PACKER_ARGS_LOG:?}"
+if [[ "${1:-}" == "build" && -n "${STUB_MANIFEST:-}" ]]; then
+  printf '%s\n' '{"builds":[{"artifact_id":"eu-west-2:ami-0badc0de","packer_run_uuid":"u1"}],"last_run_uuid":"u1"}' \
+    > "${MANIFEST_FILE:?}"
+fi
 exit 0
 STUB
 chmod +x "$STUBS/oapi-cli" "$STUBS/packer"
@@ -49,7 +56,8 @@ run_wrapper() {
   : > "$ARGS_LOG"
   WRAP_RC=0
   env PATH="$STUBS:$PATH" PACKER_ARGS_LOG="$ARGS_LOG" \
-      OUTSCALE_SSH_KEY="$FAKE_KEY" FETCH_OPTS=--skip-version-check "$@" \
+      OUTSCALE_SSH_KEY="$FAKE_KEY" FETCH_OPTS=--skip-version-check \
+      MANIFEST_FILE="$STUBS/manifest.json" ENV_FILE="$STUBS/_my_env.out" "$@" \
       bash -c "cd '$ROOT/build_scripts' && ./build_and_deploy_redis_image_with_packer.sh" \
       > "$WRAP_OUT" 2>&1 || WRAP_RC=$?
 }
@@ -100,5 +108,40 @@ assert_contains "$(out)" "introuvable"
 
 it "and never invokes packer at all"
 assert_eq "" "$(args)"
+
+# ---------- old/ is purged only once a build has actually succeeded ----------
+# Uses the repo's real redis-software/old/ (git-ignored) because the wrapper derives it
+# from REPO_ROOT; MANIFEST_FILE is redirected so the repo's own manifest is untouched.
+SW="$ROOT/redis-software"
+PARKED="$SW/old/redislabs-0.0.0-0-jammy-amd64.tar"
+
+mkdir -p "$SW/old"; echo parked > "$PARKED"
+rm -f "$STUBS/manifest.json"
+run_wrapper STUB_MANIFEST=1
+
+it "the build succeeds with a valid manifest"
+assert_eq "0" "$WRAP_RC"
+
+it "purges redis-software/old/ after a successful build"
+assert_contains "$(out)" "purge de redis-software/old/"
+
+it "and the parked tarball is gone -- ~1 GB reclaimed"
+assert_status 1 test -f "$PARKED"
+
+it "writes OUTSCALE_AMI_ID to the env file it was given, not the operator's"
+assert_contains "$(cat "$STUBS/_my_env.out" 2>/dev/null)" "OUTSCALE_AMI_ID=ami-0badc0de"
+
+# Failing build: no manifest written, so no OMI id can be extracted.
+mkdir -p "$SW/old"; echo parked > "$PARKED"
+rm -f "$STUBS/manifest.json"
+run_wrapper   # no STUB_MANIFEST
+
+it "exits non-zero when the build produced no manifest"
+assert_eq "1" "$WRAP_RC"
+
+it "and KEEPS old/ so the previous version can still be retried"
+assert_status 0 test -f "$PARKED"
+
+rm -rf "$SW/old"
 
 finish

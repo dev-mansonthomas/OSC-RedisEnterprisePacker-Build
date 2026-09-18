@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # without editing the operator's configuration.
 _ENV_OVERRIDES=()
 for _v in OUTSCALE_REGION OUTSCALE_SSH_KEY OUTSCALE_KEYPAIR_NAME OUTSCALE_SOURCE_OMI \
-          OAPI_PROFILE UBUNTU_RELEASE; do
+          OAPI_PROFILE UBUNTU_RELEASE MANIFEST_FILE ENV_FILE; do
   [[ -n "${!_v:-}" ]] && _ENV_OVERRIDES+=("$_v=${!_v}")
 done
 
@@ -32,7 +32,8 @@ source "$REPO_ROOT/build_scripts/lib/outscale_omi.sh"
 # build_scripts/ (TODO T-08).
 HCL_FILE="$REPO_ROOT/packer/redis_ubuntu_outscale_image.pkr.hcl"
 TARGET_REGION="$OUTSCALE_REGION"
-MANIFEST_FILE="$REPO_ROOT/build_scripts/manifest.json"
+# Surchargeable pour que les tests n'écrasent pas le manifest réel du dépôt.
+MANIFEST_FILE="${MANIFEST_FILE:-$REPO_ROOT/build_scripts/manifest.json}"
 
 # --- Redis Enterprise tarball: pre-flight ---
 # Delegated to fetch_redis_tarball.sh, which (unlike the inline `ls | head -1` this
@@ -160,7 +161,9 @@ set +x
 # wrong or stale one launches the WRONG IMAGE. Both failure modes used to pass
 # silently: a missing manifest only warned and exited 0, and a last_run_uuid
 # matching no build produced an empty ID that was written out anyway (TODO T-06).
-ENV_FILE="$REPO_ROOT/_my_env.sh"
+# Surchargeable, comme MANIFEST_FILE : sans cela un test qui exécute le wrapper écrit
+# un faux OUTSCALE_AMI_ID dans la configuration réelle de l'opérateur.
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/_my_env.sh}"
 
 if [[ ! -f "$MANIFEST_FILE" ]]; then
   echo "Erreur : $MANIFEST_FILE introuvable -- le build n'a pas produit d'artefact." >&2
@@ -189,6 +192,26 @@ echo "OUTSCALE_AMI_ID for Outscale in region $TARGET_REGION: $AMI_ID"
 # `source` silently kept the last one (TODO T-01).
 env_write_block "$ENV_FILE" outscale-omi "OUTSCALE_AMI_ID=$AMI_ID"
 echo "OUTSCALE_AMI_ID written to $ENV_FILE"
+
+# --- Le build a réussi : les tarballs de la version précédente ne servent plus ---
+# fetch_redis_tarball.sh les parque dans redis-software/old/ au lieu de les supprimer,
+# pour qu'un build raté puisse être relancé sur la version d'avant. Une fois l'OMI
+# produite et son ID validé, cette sécurité n'a plus d'objet : ~1 Go récupéré.
+OLD_DIR="$REPO_ROOT/redis-software/old"
+if [[ -d "$OLD_DIR" ]]; then
+  shopt -s nullglob
+  old_files=("$OLD_DIR"/*)
+  shopt -u nullglob
+  if (( ${#old_files[@]} )); then
+    freed="$(du -sh "$OLD_DIR" 2>/dev/null | cut -f1)"
+    echo "Build réussi : purge de redis-software/old/ (${#old_files[@]} fichier(s), ${freed:-?})"
+    for f in "${old_files[@]}"; do
+      echo "  rm $(basename "$f")"
+      rm -f "$f"
+    done
+    rmdir "$OLD_DIR" 2>/dev/null || true
+  fi
+fi
 
 # Warn about leftovers from the old append-only behaviour.
 dupes="$(env_legacy_duplicates "$ENV_FILE" OUTSCALE_AMI_ID)"

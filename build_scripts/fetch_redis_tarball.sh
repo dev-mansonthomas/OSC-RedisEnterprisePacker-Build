@@ -19,6 +19,10 @@ source "$REPO_ROOT/build_scripts/lib/redis_version.sh"
 
 SOFTWARE_DIR="$REPO_ROOT/redis-software"
 SUMS_FILE="$SOFTWARE_DIR/SHA256SUMS"
+# Superseded tarballs are parked here rather than deleted, so a failed build can be
+# retried against the previous version. Emptied by the build wrapper once a build
+# succeeds -- see purge_old_tarballs() there.
+OLD_DIR="$SOFTWARE_DIR/old"
 
 DO_DOWNLOAD=0
 REQUIRE_LATEST=0
@@ -62,9 +66,10 @@ case "${#LOCAL_TARBALLS[@]}" in
     say "Local:  $LOCAL_VERSION  ($(basename "$LOCAL_FILE"))"
     ;;
   *)
+    # Only the top level is globbed, so anything already parked in old/ is ignored.
     printf 'Found %d tarballs in redis-software/:\n' "${#LOCAL_TARBALLS[@]}" >&2
     printf '  %s\n' "${LOCAL_TARBALLS[@]##*/}" >&2
-    die "ambiguous -- keep exactly one, or pass --version to say which to use"
+    die "ambiguous -- keep exactly one (move the others to redis-software/old/), or pass --version"
     ;;
 esac
 
@@ -142,10 +147,14 @@ if (( DO_DOWNLOAD )) && [[ -n "$LATEST_VERSION" ]] && [[ ! -f "$TARGET_FILE" ]];
   say "Saved   $(basename "$TARGET_FILE")  ($actual bytes)"
   record_digest "$TARGET_FILE"
 
-  # Replaces the local inventory: the freshly downloaded one is now authoritative.
-  if [[ -n "$LOCAL_FILE" && "$LOCAL_FILE" != "$TARGET_FILE" ]]; then
-    warn "an older tarball is still present: $(basename "$LOCAL_FILE")"
-    warn "remove it -- the build refuses to run with more than one."
+  # Park the superseded tarball instead of leaving it alongside the new one: the build
+  # refuses to choose between two (T-05), and deleting it outright would make a
+  # rollback mean re-downloading ~1 GB. The wrapper empties old/ after a good build.
+  if [[ -n "$LOCAL_FILE" && "$LOCAL_FILE" != "$TARGET_FILE" && -f "$LOCAL_FILE" ]]; then
+    mkdir -p "$OLD_DIR"
+    mv "$LOCAL_FILE" "$OLD_DIR/"
+    say "Moved   $(basename "$LOCAL_FILE") -> $(basename "$OLD_DIR")/"
+    say "        (removed automatically once a build succeeds)"
   fi
   LOCAL_FILE="$TARGET_FILE"
   LOCAL_VERSION="$LATEST_VERSION"
