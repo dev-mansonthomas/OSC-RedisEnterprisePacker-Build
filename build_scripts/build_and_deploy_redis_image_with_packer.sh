@@ -10,13 +10,23 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 _ENV_OVERRIDES=()
 for _v in OUTSCALE_REGION OUTSCALE_SSH_KEY OUTSCALE_KEYPAIR_NAME OUTSCALE_SOURCE_OMI \
           OAPI_PROFILE UBUNTU_RELEASE MANIFEST_FILE ENV_FILE \
-          BUILD_LOG_DIR BUILD_LOG_KEEP PACKER_OUT_LINK; do
+          BUILD_LOG_DIR BUILD_LOG_KEEP PACKER_OUT_LINK MY_ENV_FILE SUMS_FILE; do
   [[ -n "${!_v:-}" ]] && _ENV_OVERRIDES+=("$_v=${!_v}")
 done
 
+# Chemin de la configuration, surchargeable : _my_env.sh est git-ignoré, donc absent en
+# CI et dans tout clone frais. Sans cette indirection les tests qui exécutent ce script
+# ne peuvent pas lui fournir une configuration isolée.
+MY_ENV_FILE="${MY_ENV_FILE:-$REPO_ROOT/_my_env.sh}"
+if [[ ! -f "$MY_ENV_FILE" ]]; then
+  echo "Erreur : configuration introuvable : $MY_ENV_FILE" >&2
+  echo "         Copiez _my_env.template.sh vers _my_env.sh et renseignez-la." >&2
+  exit 1
+fi
+
 # _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
 # shellcheck source=/dev/null
-source "$REPO_ROOT/_my_env.sh"
+source "$MY_ENV_FILE"
 
 for _kv in ${_ENV_OVERRIDES[@]+"${_ENV_OVERRIDES[@]}"}; do
   export "${_kv%%=*}=${_kv#*=}"
@@ -196,7 +206,7 @@ unset _old_logs
 # matching no build produced an empty ID that was written out anyway (TODO T-06).
 # Surchargeable, comme MANIFEST_FILE : sans cela un test qui exécute le wrapper écrit
 # un faux OUTSCALE_AMI_ID dans la configuration réelle de l'opérateur.
-ENV_FILE="${ENV_FILE:-$REPO_ROOT/_my_env.sh}"
+ENV_FILE="${ENV_FILE:-$MY_ENV_FILE}"
 
 if [[ ! -f "$MANIFEST_FILE" ]]; then
   echo "Erreur : $MANIFEST_FILE introuvable -- le build n'a pas produit d'artefact." >&2

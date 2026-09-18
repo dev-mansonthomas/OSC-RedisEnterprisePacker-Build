@@ -9,7 +9,7 @@ set -uo pipefail
 source "$(dirname "$0")/assert.sh"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-STUBS="$(mktemp -d)"; trap 'rm -rf "$STUBS"' EXIT
+STUBS="$(mktemp -d)"
 
 # --- stub oapi-cli: returns the fixture for a broad query, one image for an id query
 cat > "$STUBS/oapi-cli" <<STUB
@@ -43,8 +43,44 @@ exit 0
 STUB
 chmod +x "$STUBS/oapi-cli" "$STUBS/packer"
 
-# The wrapper reads _my_env.sh and needs a readable key; give it a throwaway one.
+# The wrapper needs a readable key and a configuration file. _my_env.sh is git-ignored,
+# so it is absent in CI and in any fresh clone: the test must supply its own rather than
+# borrow the operator's.
 FAKE_KEY="$STUBS/key"; ssh-keygen -q -t rsa -b 2048 -N '' -f "$FAKE_KEY" </dev/null >/dev/null 2>&1
+cat > "$STUBS/_my_env.sh" <<ENVCFG
+OWNER="ci-test"
+OUTSCALE_REGION=eu-west-2
+OUTSCALE_SSH_KEY="$FAKE_KEY"
+ENVCFG
+
+# The pre-flight needs exactly ONE tarball in redis-software/ -- it refuses to choose
+# between several, correctly. So: use whichever one is already there (the developer's),
+# and only create a stand-in when the directory is empty (CI, fresh clone). Contents are
+# irrelevant, --skip-version-check reads nothing.
+#
+# A stand-in must not reuse a real filename either: redis-software/SHA256SUMS is tracked,
+# so a recorded name with different content trips the digest check. Hence a version that
+# will never be published.
+SW="$ROOT/redis-software"
+STUB_TARBALL=""
+shopt -s nullglob
+_existing=("$SW"/redislabs-*.tar)
+shopt -u nullglob
+
+if (( ${#_existing[@]} == 1 )); then
+  TEST_VERSION="$(basename "${_existing[0]}" \
+    | sed -nE 's#^redislabs-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)-.*#\1#p')"
+elif (( ${#_existing[@]} == 0 )); then
+  TEST_VERSION="9.9.9-99"
+  STUB_TARBALL="$SW/redislabs-${TEST_VERSION}-jammy-amd64.tar"
+  mkdir -p "$SW"; : > "$STUB_TARBALL"
+else
+  echo "SKIP: redis-software/ holds ${#_existing[@]} tarballs; keep exactly one" >&2
+  exit 0
+fi
+
+cleanup_tarball() { [[ -n "$STUB_TARBALL" ]] && rm -f "$STUB_TARBALL"; return 0; }
+trap 'cleanup_tarball; rm -rf "$STUBS"' EXIT
 
 ARGS_LOG="$STUBS/packer-args"
 WRAP_OUT="$STUBS/wrapper-out"
@@ -58,7 +94,8 @@ run_wrapper() {
   env PATH="$STUBS:$PATH" PACKER_ARGS_LOG="$ARGS_LOG" \
       OUTSCALE_SSH_KEY="$FAKE_KEY" FETCH_OPTS=--skip-version-check \
       MANIFEST_FILE="$STUBS/manifest.json" ENV_FILE="$STUBS/_my_env.out" \
-      PACKER_OUT_LINK="$STUBS/packer.out" "$@" \
+      PACKER_OUT_LINK="$STUBS/packer.out" MY_ENV_FILE="$STUBS/_my_env.sh" \
+      SUMS_FILE="$STUBS/SHA256SUMS" "$@" \
       bash -c "cd '$ROOT/build_scripts' && ./build_and_deploy_redis_image_with_packer.sh" \
       > "$WRAP_OUT" 2>&1 || WRAP_RC=$?
 }
@@ -113,7 +150,6 @@ assert_eq "" "$(args)"
 # ---------- old/ is purged only once a build has actually succeeded ----------
 # Uses the repo's real redis-software/old/ (git-ignored) because the wrapper derives it
 # from REPO_ROOT; MANIFEST_FILE is redirected so the repo's own manifest is untouched.
-SW="$ROOT/redis-software"
 PARKED="$SW/old/redislabs-0.0.0-0-jammy-amd64.tar"
 
 mkdir -p "$SW/old"; echo parked > "$PARKED"
@@ -155,7 +191,7 @@ it "announces where the build is being logged"
 assert_contains "$(out)" "Journal du build"
 
 it "writes a timestamped log name carrying the Redis version"
-assert_status 0 bash -c 'ls "$1"/packer-*Z-8.2.0-78.* >/dev/null 2>&1' _ "$LOGS"
+assert_status 0 test -n "$(find "$LOGS" -name "packer-*Z-${TEST_VERSION}.*" -print -quit)"
 
 it "writes a summary beside it, so a 350 KB log is self-describing"
 assert_contains "$(cat "$LOGS"/*.summary.txt)" "omi_id           ami-0badc0de"

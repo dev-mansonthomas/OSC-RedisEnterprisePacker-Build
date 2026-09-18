@@ -41,17 +41,39 @@ fi
 # ---------- packer ----------
 if (( RUN_PACKER )); then
   step "packer fmt / init / validate"
-  # The tarball named by redis_version must exist for the file provisioner to
-  # validate, so lint uses whatever version is actually on disk when there is one.
   PKR_FILE="packer/redis_ubuntu_outscale_image.pkr.hcl"
   LINT_REGION="${LINT_REGION:-eu-west-2}"
-  LINT_REDIS_VERSION="$(
-    ls redis-software/redislabs-*.tar 2>/dev/null | head -1 \
-      | sed -nE 's#.*redislabs-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)-.*#\1#p'
-  )"
-  : "${LINT_REDIS_VERSION:=0.0.0-0}"
   # Placeholder: lint checks the template, not that this image exists.
   LINT_SOURCE_OMI="${LINT_SOURCE_OMI:-ami-00000000}"
+
+  # Use whichever tarball is on disk, if any. Deliberately NOT `ls | sed`: ls exits 2
+  # when the glob matches nothing, and pipefail turns that into an abort -- which is
+  # exactly how this script passed locally (tarball present) and failed in CI (absent).
+  shopt -s nullglob
+  _tarballs=(redis-software/redislabs-*.tar)
+  shopt -u nullglob
+  LINT_REDIS_VERSION=""
+  if (( ${#_tarballs[@]} )); then
+    LINT_REDIS_VERSION="$(basename "${_tarballs[0]}" \
+      | sed -nE 's#^redislabs-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)-.*#\1#p')"
+  fi
+  : "${LINT_REDIS_VERSION:=0.0.0-0}"
+
+  # `packer validate` prepares the file provisioners, so their sources must exist. In CI
+  # the tarball is git-ignored and absent; stand in an empty file so the template is
+  # still really validated, and remove only what we created.
+  LINT_STUB_TARBALL="redis-software/redislabs-${LINT_REDIS_VERSION}-jammy-amd64.tar"
+  LINT_STUB_CREATED=0
+  if [[ ! -e "$LINT_STUB_TARBALL" ]]; then
+    mkdir -p redis-software
+    : > "$LINT_STUB_TARBALL"
+    LINT_STUB_CREATED=1
+  fi
+  cleanup_stub_tarball() {
+    (( LINT_STUB_CREATED )) && rm -f "$LINT_STUB_TARBALL"
+    LINT_STUB_CREATED=0
+  }
+  trap cleanup_stub_tarball EXIT
   if command -v packer >/dev/null; then
     if packer fmt -check -diff packer/; then
       ok "packer fmt"
@@ -85,6 +107,7 @@ if (( RUN_PACKER )); then
         -var "source_omi=$LINT_SOURCE_OMI" "$PKR_FILE" 2>&1 | sed 's/^/           /' | head -20
     fi
     rm -f "$FAKE_KEY" "$FAKE_KEY.pub"
+    cleanup_stub_tarball
 
     # The redis_version validation block must actually reject a bad value, or the
     # guard is decorative.

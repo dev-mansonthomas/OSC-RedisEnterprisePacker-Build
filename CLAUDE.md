@@ -86,11 +86,20 @@ run in the VM:
 ```sh
 ./scripts/lint.sh              # shellcheck + packer fmt/init/validate + drift guard + secret scan
 ./scripts/lint.sh --no-packer  # same, minus packer (for a VM rebuilt without it)
-./tests/run.sh                 # 66 unit/integration tests, no network, no credentials
+./tests/run.sh                 # 116 unit/integration tests, no network, no credentials
 ```
 
 Both are what CI runs (`.github/workflows/ci.yml`). The Packer build itself is
 deliberately **not** in CI: it needs Outscale credentials and is a host action.
+
+**Both must pass with `_my_env.sh` and the tarball absent** — they are git-ignored, so
+that is the state CI and any fresh clone are in. To check before pushing:
+
+```sh
+mkdir -p /tmp/ci && mv redis-software/redislabs-*.tar _my_env.sh /tmp/ci/
+./scripts/lint.sh && ./tests/run.sh          # must both pass
+mv /tmp/ci/redislabs-*.tar redis-software/ && mv /tmp/ci/_my_env.sh .
+```
 
 > `packer` **1.16.0** is installed in the VM (outscale plugin v1.6.1). It was added by hand on
 > 2026-09-17, so it will disappear on the next VM rebuild unless `packer` is added to
@@ -202,8 +211,13 @@ sourcing it and restores them after — **the environment wins over the file**, 
 what makes one-off overrides and the test suite possible:
 
 `OUTSCALE_REGION` · `OUTSCALE_SSH_KEY` · `OUTSCALE_KEYPAIR_NAME` ·
-`OUTSCALE_SOURCE_OMI` · `OAPI_PROFILE` · `UBUNTU_RELEASE` · `MANIFEST_FILE` · `ENV_FILE` ·
-`BUILD_LOG_DIR` · `BUILD_LOG_KEEP` · `PACKER_OUT_LINK`
+`OUTSCALE_SOURCE_OMI` · `OAPI_PROFILE` · `UBUNTU_RELEASE` · `MY_ENV_FILE` · `ENV_FILE` ·
+`MANIFEST_FILE` · `SUMS_FILE` · `BUILD_LOG_DIR` · `BUILD_LOG_KEEP` · `PACKER_OUT_LINK`
+
+Every path the wrapper reads or writes is overridable. That is not incidental: the test
+suite runs the real wrapper, and three times it clobbered real files before these existed
+(`_my_env.sh`, `manifest.json`, and the build log). Any new path the wrapper touches should
+get the same treatment.
 
 Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 

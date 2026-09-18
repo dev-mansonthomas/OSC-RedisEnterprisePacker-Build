@@ -18,7 +18,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/build_scripts/lib/redis_version.sh"
 
 SOFTWARE_DIR="$REPO_ROOT/redis-software"
-SUMS_FILE="$SOFTWARE_DIR/SHA256SUMS"
+# Surchargeable : ce fichier est suivi par git, et un test qui exécute ce script
+# y écrirait l'empreinte de son tarball factice.
+SUMS_FILE="${SUMS_FILE:-$SOFTWARE_DIR/SHA256SUMS}"
 # Superseded tarballs are parked here rather than deleted, so a failed build can be
 # retried against the previous version. Emptied by the build wrapper once a build
 # succeeds -- see purge_old_tarballs() there.
