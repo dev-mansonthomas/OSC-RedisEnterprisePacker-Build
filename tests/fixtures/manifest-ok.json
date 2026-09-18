@@ -1,0 +1,9 @@
+{
+  "builds": [
+    { "name": "b", "builder_type": "outscale-bsu", "build_time": 1,
+      "artifact_id": "eu-west-2:ami-11111111", "packer_run_uuid": "old-uuid" },
+    { "name": "b", "builder_type": "outscale-bsu", "build_time": 2,
+      "artifact_id": "eu-west-2:ami-06426132", "packer_run_uuid": "new-uuid" }
+  ],
+  "last_run_uuid": "new-uuid"
+}

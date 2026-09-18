@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(shellcheck:*)",
+      "Bash(packer fmt:*)",
+      "Bash(packer validate:*)",
+      "Bash(packer init:*)",
+      "Bash(packer version)",
+      "Bash(jq:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git ls-files:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(sed -n:*)",
+      "Bash(diff:*)",
+      "Bash(tar -tf:*)",
+      "Bash(sha256sum:*)"
+    ],
+    "deny": [
+      "Bash(oapi-cli:*)",
+      "Bash(packer build:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Read(./_my_env.sh)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Read(~/.osc/config.json)",
+      "Read(~/.ssh/**)"
+    ]
+  }
+}

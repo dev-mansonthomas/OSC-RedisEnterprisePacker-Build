@@ -12,6 +12,8 @@ set -euo pipefail
 # 1) Termine toutes les VMs rattachées au NET_ID (trouvées via ReadVms filtré par NetId)
 # 2) Détache et supprime les ressources créées: routes, associations, subnets, SG, Internet Service, Net
 
+# _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
+# shellcheck source=/dev/null
 source "$(dirname "$0")/../_my_env.sh"
 
 OAPI_PROFILE="${OAPI_PROFILE:-default}"
@@ -84,7 +86,7 @@ safe_unlink_route_table() {
 # ---------- 1) Terminate VMs du Net ----------
 echo "[1/7] Recherche des VMs dans le Net $OSC_NET_ID"
 READ_VMS="$(oapi-cli --profile "$OAPI_PROFILE" ReadVms --Filters "{\"NetIds\":[\"$OSC_NET_ID\"]}")"
-VM_IDS=($(echo "$READ_VMS" | jq -r '.Vms[]?.VmId' || true))
+mapfile -t VM_IDS < <(echo "$READ_VMS" | jq -r '.Vms[]?.VmId' || true)
 
 if [[ ${#VM_IDS[@]} -gt 0 ]]; then
   echo "VMs à supprimer: ${VM_IDS[*]}"

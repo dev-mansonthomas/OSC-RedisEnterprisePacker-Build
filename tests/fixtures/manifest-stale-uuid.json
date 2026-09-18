@@ -1,0 +1,6 @@
+{
+  "builds": [
+    { "name": "b", "artifact_id": "eu-west-2:ami-11111111", "packer_run_uuid": "old-uuid" }
+  ],
+  "last_run_uuid": "uuid-that-matches-nothing"
+}

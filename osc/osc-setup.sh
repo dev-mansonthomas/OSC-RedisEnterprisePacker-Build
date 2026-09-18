@@ -9,7 +9,13 @@ set -euo pipefail
 # Usage: ./osc-setup.sh 
 # Ex:    ./osc-setup.sh 
 
-source "$(dirname "$0")/../_my_env.sh"
+# _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "$REPO_ROOT/_my_env.sh"
+# shellcheck source=build_scripts/lib/env_file.sh
+source "$REPO_ROOT/build_scripts/lib/env_file.sh"
 
 OAPI_PROFILE="default"
 #REGION is not needed as the access key is bound to a specific region
@@ -210,19 +216,29 @@ echo "SUBNETS:     ${SUBNET_IDS[*]}"
 echo "AZs:         ${AZS[*]}"
 echo "====================================="
 
-# Sauvegarde d’un env file pour réutilisation
-ENV_FILE="../_my_env.sh"
-{
-  echo "# Generated environment variables (OUTSCALE)"
-  echo "OSC_NET_ID=$NET_ID"
-  echo "OSC_IGW_ID=$IGW_ID"
-  echo "OSC_RTB_ID=$RTB_ID"
-  echo "OSC_SG_ID=$SG_ID"
-  echo "OSC_SUBNET1=${SUBNET_IDS[0]}"
-  echo "OSC_SUBNET2=${SUBNET_IDS[1]}"
-  echo "OSC_SUBNET3=${SUBNET_IDS[2]}"
-  echo "OSC_AZ1=${AZS[0]}"
-  echo "OSC_AZ2=${AZS[1]}"
-  echo "OSC_AZ3=${AZS[2]}"
-} >> "$ENV_FILE"
+# Sauvegarde d’un env file pour réutilisation.
+# Bloc réécrit en place (et non ajouté) : l'ancien comportement laissait plusieurs
+# blocs OSC_* et `source` n'en retenait silencieusement que le dernier, rendant le
+# Net précédent introuvable pour tear_down_outscale.sh (cf. TODO T-01).
+ENV_FILE="$REPO_ROOT/_my_env.sh"
+env_write_block "$ENV_FILE" outscale-net \
+  "OSC_NET_ID=$NET_ID" \
+  "OSC_IGW_ID=$IGW_ID" \
+  "OSC_RTB_ID=$RTB_ID" \
+  "OSC_SG_ID=$SG_ID" \
+  "OSC_SUBNET1=${SUBNET_IDS[0]}" \
+  "OSC_SUBNET2=${SUBNET_IDS[1]}" \
+  "OSC_SUBNET3=${SUBNET_IDS[2]}" \
+  "OSC_AZ1=${AZS[0]}" \
+  "OSC_AZ2=${AZS[1]}" \
+  "OSC_AZ3=${AZS[2]}"
 echo "Environment variables saved to $ENV_FILE"
+
+dupes="$(env_legacy_duplicates "$ENV_FILE" OSC_NET_ID)"
+if (( dupes > 1 )); then
+  echo "" >&2
+  echo "ATTENTION : $ENV_FILE contient $dupes affectations de OSC_NET_ID." >&2
+  echo "            Des Nets créés par d'anciens lancements sont probablement" >&2
+  echo "            encore facturés et introuvables pour tear_down_outscale.sh." >&2
+  echo "            Vérifiez la console Outscale et nettoyez les lignes hors bloc." >&2
+fi
