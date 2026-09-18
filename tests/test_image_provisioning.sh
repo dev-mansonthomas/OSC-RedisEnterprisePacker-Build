@@ -29,6 +29,43 @@ assert_contains "$(cat "$P")" "Redis GPG key not found in the tarball"
 it "verifies exactly one .deb, so a layout change cannot silently pass"
 assert_contains "$(cat "$P")" "expected exactly one redislabs_*.deb"
 
+# ---------- the 2026-09-18 10:07 build failure ----------
+# "E: Unable to locate package dpkg-sig": apt had indexed only jammy-updates,
+# jammy-security and jammy-backports, never the jammy release pocket, so every
+# universe-only package vanished while everything else still installed.
+it "waits for cloud-init before touching apt, which is what caused the partial index"
+ci_line="$(grep -n 'cloud-init status --wait' "$P" | head -1 | cut -d: -f1)"
+apt_line="$(grep -n 'apt-get update -y' "$P" | head -1 | cut -d: -f1)"
+assert_status 0 test "$ci_line" -lt "$apt_line"
+
+it "guarantees the release pocket with universe is present"
+assert_contains "$(cat "$P")" "main restricted universe multiverse"
+
+it "retries apt-get update instead of failing on a transient mirror error"
+assert_contains "$(cat "$P")" "retrying in 10s"
+
+it "fails with a clear reason when a universe package is unavailable"
+assert_contains "$(cat "$P")" "is not available. The universe component"
+
+it "prints the APT sources actually in effect, for post-mortem"
+assert_contains "$(cat "$P")" "APT sources in effect"
+
+it "uses netcat-openbsd rather than the transitional netcat package"
+assert_contains "$(cat "$P")" "netcat-openbsd"
+
+it "and no longer installs the bare 'netcat' virtual package"
+assert_status 1 grep -qE 'install .*[[:space:]]netcat[[:space:]]' "$P"
+
+# ---------- the signature check must not depend on a universe package ----------
+it "verifies the .deb with gpg directly, not through dpkg-sig"
+assert_contains "$(cat "$P")" "verify_deb_signature"
+
+it "treats a missing dpkg-sig as non-fatal -- gpg is the authority"
+assert_contains "$(cat "$P")" "dpkg-sig unavailable; gpg check is authoritative"
+
+it "still cross-checks with dpkg-sig when it is installed"
+assert_contains "$(cat "$P")" "dpkg-sig cross-check agrees"
+
 # ---------- T-11: the image must not carry a shared identity ----------
 it "removes the SSH host keys"
 assert_status 0 grep -qE '^rm -f /etc/ssh/ssh_host_\*' "$P"

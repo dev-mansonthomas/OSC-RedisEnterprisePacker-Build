@@ -12,8 +12,58 @@ fi
 
 echo "Detected user: $USER"
 
+# --- Wait for cloud-init before touching apt ---
+# cloud-init rewrites /etc/apt/sources.list to a regional mirror. Running apt while it
+# is mid-rewrite yields a partial index: the build of 2026-09-18 10:07 fetched only
+# jammy-updates / jammy-security / jammy-backports and NOT the jammy release pocket, so
+# every universe-only package became invisible and `dpkg-sig` failed with "Unable to
+# locate package". The successful 00:25 build had used the regional mirror; this one had
+# fallen back to archive.ubuntu.com. Waiting removes the race.
+if command -v cloud-init >/dev/null; then
+  echo "Waiting for cloud-init to finish..."
+  cloud-init status --wait || echo "WARNING: cloud-init reported a problem (continuing)" >&2
+  cloud-init status --long || true
+fi
+echo "--- APT sources in effect ---"
+grep -rhE '^deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null || true
+
+# --- Guarantee the release pocket and the universe component ---
+# dpkg-sig, iotop and netcat live in jammy/universe, which is NOT covered by
+# jammy-updates or jammy-security: a missing release pocket makes them unavailable while
+# everything else still installs, so the failure looks unrelated to apt.
+# shellcheck source=/dev/null  # guest file, only present in the build VM
+. /etc/os-release
+UBUNTU_CODENAME="${UBUNTU_CODENAME:-jammy}"
+if ! grep -rqE "^deb .*[[:space:]]${UBUNTU_CODENAME}[[:space:]].*universe" \
+       /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+  echo "Release pocket with universe missing for ${UBUNTU_CODENAME}; adding it."
+  echo "deb http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME} main restricted universe multiverse" \
+    > /etc/apt/sources.list.d/99-release-pocket.list
+fi
+
 # --- Update base system ---
-apt-get update -y
+# Retried: a mirror can be briefly unavailable, and failing the whole build on a
+# transient 5xx wastes a ~5 minute run.
+apt_update_ok=0
+for attempt in 1 2 3; do
+  if apt-get update -y; then apt_update_ok=1; break; fi
+  echo "apt-get update failed (attempt $attempt/3); retrying in 10s..." >&2
+  sleep 10
+done
+if [ "$apt_update_ok" -ne 1 ]; then
+  echo "ERROR: apt-get update failed three times" >&2
+  exit 1
+fi
+
+# Fail here, with a clear reason, rather than later on a confusing "Unable to locate".
+for pkg in iotop netcat-openbsd; do
+  if ! apt-cache policy "$pkg" 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+    echo "ERROR: package '$pkg' is not available. The universe component or the" >&2
+    echo "       ${UBUNTU_CODENAME} release pocket is missing from the APT sources." >&2
+    exit 1
+  fi
+done
+
 apt-get upgrade -y
 
 # --- Wait upgrade to complete, otherwise there might be some issues installing dpkg-sig ---
@@ -55,11 +105,15 @@ umask 0022
 #apt-get install -y auditd
 # 
 
-#--- install dpkg-sig to check redis .deb signature ---
-apt-get install -y dpkg-sig
+#--- dpkg-sig: optional cross-check only ---
+# The authoritative .deb signature check is done with gpg further down, so a missing
+# dpkg-sig must not fail the build.
+apt-get install -y dpkg-sig || echo "WARNING: dpkg-sig unavailable; gpg check is authoritative" >&2
 
 # --- Install utilities ---
-apt-get -y install vim iotop iputils-ping curl jq netcat dnsutils
+# netcat-openbsd rather than the transitional 'netcat' virtual package, which
+# resolves differently depending on which components are enabled.
+apt-get -y install vim iotop iputils-ping curl jq netcat-openbsd dnsutils
 
 # --- Disable swap permanently ---
 swapoff -a
@@ -142,19 +196,73 @@ gpg --import "$GPG_KEY_FILE" || {
   exit 1
 }
 
-# --- Verify Redis .deb signature ---
-# dpkg-sig exits 0 on success, but be explicit about which package was verified: the
-# glob would silently pass if the tarball layout ever changed.
+# --- Verify the Redis .deb signature ---
+# Exactly one package, so a change in the tarball layout cannot silently pass the glob.
 deb_count=$(find /home/$USER/redis-enterprise -maxdepth 1 -name 'redislabs_*.deb' | wc -l)
 if [ "$deb_count" -ne 1 ]; then
   echo "ERROR: expected exactly one redislabs_*.deb, found $deb_count" >&2
   exit 1
 fi
+REDIS_DEB="$(find /home/$USER/redis-enterprise -maxdepth 1 -name 'redislabs_*.deb' | head -1)"
 
-dpkg-sig --verify /home/$USER/redis-enterprise/redislabs_*.deb || {
-  echo "ERROR: Signature verification of Redis .deb package failed" >&2
-  exit 1
+# Verified with gpg directly rather than through dpkg-sig.
+#
+# dpkg-sig lives in jammy/universe only, and the build of 2026-09-18 10:07 failed at
+# "Unable to locate package dpkg-sig" when the release pocket went missing. The apt
+# fixes above address that cause, but the security-critical step should not depend on a
+# universe package at all -- dpkg-sig is an unmaintained Perl script, and we already
+# have the signing key with a pinned fingerprint.
+#
+# A signed .deb is an ar archive whose `_gpgorigin` member is a detached signature over
+# the concatenation of the remaining members, in archive order. That is precisely what
+# dpkg-sig checks, so this is the same verification with one less dependency.
+verify_deb_signature() {
+  local deb="$1" tmp sig payload rc member
+  tmp="$(mktemp -d)"; sig="$tmp/sig"; payload="$tmp/payload"
+
+  local members=()
+  while IFS= read -r member; do
+    [ "$member" = "_gpgorigin" ] || members+=("$member")
+  done < <(ar t "$deb")
+
+  if [ "${#members[@]}" -eq 0 ]; then
+    echo "ERROR: $deb has no archive members" >&2; rm -rf "$tmp"; return 1
+  fi
+
+  if ! ar p "$deb" _gpgorigin > "$sig" 2>/dev/null || [ ! -s "$sig" ]; then
+    echo "ERROR: $deb carries no _gpgorigin member -- it is NOT signed" >&2
+    rm -rf "$tmp"; return 1
+  fi
+
+  if ! ar p "$deb" "${members[@]}" > "$payload"; then
+    echo "ERROR: could not extract the signed payload from $deb" >&2
+    rm -rf "$tmp"; return 1
+  fi
+
+  gpg --verify "$sig" "$payload" 2>&1 | sed 's/^/    /'
+  gpg --verify "$sig" "$payload" >/dev/null 2>&1
+  rc=$?
+  rm -rf "$tmp"
+  return "$rc"
 }
+
+echo "--- Verifying the signature of $(basename "$REDIS_DEB") ---"
+if ! verify_deb_signature "$REDIS_DEB"; then
+  echo "ERROR: signature verification of $REDIS_DEB failed" >&2
+  echo "       The package is not signed by the pinned Redis key." >&2
+  exit 1
+fi
+echo "Signature verified against the pinned Redis key."
+
+# Cross-check with dpkg-sig when it happens to be installed. Not required, and never
+# fatal on absence: the gpg check above is the authority.
+if command -v dpkg-sig >/dev/null; then
+  dpkg-sig --verify "$REDIS_DEB" || {
+    echo "ERROR: dpkg-sig disagrees with the gpg verification of $REDIS_DEB" >&2
+    exit 1
+  }
+  echo "dpkg-sig cross-check agrees."
+fi
 
 
 # --- deamon reload ---

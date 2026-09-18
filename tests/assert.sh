@@ -36,6 +36,15 @@ assert_status() {
   else _fail "expected exit $expected, got $rc" "output: $out"; fi
 }
 
+# assert_fails <command...> -- any non-zero exit. Use when the contract is "rejects",
+# not a specific code: gpg returns 1 for a bad signature but 2 for "cannot check".
+assert_fails() {
+  local out rc
+  out="$("$@" 2>&1)"; rc=$?
+  if (( rc != 0 )); then _pass
+  else _fail "expected a non-zero exit, got 0" "output: $out"; fi
+}
+
 finish() {
   printf '\n'
   if (( TESTS_FAILED )); then
