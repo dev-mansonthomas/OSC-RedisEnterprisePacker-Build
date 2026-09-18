@@ -3,9 +3,24 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# _my_env.sh assigns unconditionally, so it would clobber anything already exported.
+# Snapshot the knobs first and restore them afterwards, making the environment win over
+# the file: needed to override a single value for one run (CI, tests, a pinned base OMI)
+# without editing the operator's configuration.
+_ENV_OVERRIDES=()
+for _v in OUTSCALE_REGION OUTSCALE_SSH_KEY OUTSCALE_KEYPAIR_NAME OUTSCALE_SOURCE_OMI \
+          OAPI_PROFILE UBUNTU_RELEASE; do
+  [[ -n "${!_v:-}" ]] && _ENV_OVERRIDES+=("$_v=${!_v}")
+done
+
 # _my_env.sh is operator-supplied and git-ignored: shellcheck cannot follow it.
 # shellcheck source=/dev/null
 source "$REPO_ROOT/_my_env.sh"
+
+for _kv in ${_ENV_OVERRIDES[@]+"${_ENV_OVERRIDES[@]}"}; do
+  export "${_kv%%=*}=${_kv#*=}"
+done
+unset _v _kv _ENV_OVERRIDES
 # shellcheck source=build_scripts/lib/redis_version.sh
 source "$REPO_ROOT/build_scripts/lib/redis_version.sh"
 # shellcheck source=build_scripts/lib/env_file.sh
@@ -23,8 +38,11 @@ MANIFEST_FILE="$REPO_ROOT/build_scripts/manifest.json"
 # Delegated to fetch_redis_tarball.sh, which (unlike the inline `ls | head -1` this
 # replaces) refuses to guess between several tarballs and detects a filename that
 # carries no usable version instead of silently mis-parsing it (TODO T-05).
-# Set FETCH_OPTS=--download to fetch the latest, or --skip-version-check to stay offline.
-: "${FETCH_OPTS:=}"
+# Télécharge automatiquement la dernière version si elle n'est pas déjà présente :
+# publier une nouvelle image Redis Enterprise sans prendre la version courante n'aurait
+# pas de sens. FETCH_OPTS="" pour ne construire qu'avec ce qui est déjà sur disque,
+# FETCH_OPTS=--skip-version-check pour ne pas contacter le réseau du tout.
+: "${FETCH_OPTS:=--download}"
 # shellcheck disable=SC2086  # FETCH_OPTS is a deliberate option list
 PREFLIGHT="$("$REPO_ROOT/build_scripts/fetch_redis_tarball.sh" $FETCH_OPTS)" || exit 1
 printf '%s\n' "$PREFLIGHT"
@@ -44,6 +62,64 @@ echo "Attendu par Packer: redis-software/$(rcv_tarball_name "$REDIS_VERSION")"
 : "${OUTSCALE_SSH_KEY:?OUTSCALE_SSH_KEY manquant dans _my_env.sh}"
 : "${OUTSCALE_KEYPAIR_NAME:=outscale-tmanson-keypair}"
 
+# --- OMI de base : résolution automatique, ou épinglage explicite ---
+#
+# Par défaut on prend la dernière Ubuntu ${UBUNTU_RELEASE} x86_64/bsu publiée par
+# Outscale, pour qu'une nouvelle image Redis Enterprise embarque aussi les correctifs
+# système récents. Outscale republie tous les ~2 mois et dé-enregistre les anciennes au
+# bout de ~10 : un ID figé dans le dépôt finit donc toujours par casser le build.
+#
+# Pour une mise à jour de CVE Redis Enterprise, où l'on veut changer le moins de choses
+# possible, épinglez la base :
+#     OUTSCALE_SOURCE_OMI=ami-xxxxxxxx ./build_and_deploy_redis_image_with_packer.sh
+: "${UBUNTU_RELEASE:=22.04}"
+SOURCE_OMI=""
+SOURCE_OMI_NAME=""
+
+if [[ "${SKIP_OMI_CHECK:-0}" == 1 ]]; then
+  SOURCE_OMI="${OUTSCALE_SOURCE_OMI:?SKIP_OMI_CHECK=1 exige OUTSCALE_SOURCE_OMI}"
+  SOURCE_OMI_NAME="non-verifie"
+  echo "OMI de base : $SOURCE_OMI (épinglée, vérification ignorée)"
+
+elif [[ -n "${OUTSCALE_SOURCE_OMI:-}" ]]; then
+  if ! omi_info="$(osc_omi_describe "$OUTSCALE_SOURCE_OMI")"; then
+    echo "" >&2
+    echo "Erreur : l'OMI épinglée $OUTSCALE_SOURCE_OMI est introuvable dans $TARGET_REGION." >&2
+    echo "         Outscale l'a probablement dé-enregistrée (rétention ~10 mois)." >&2
+    echo "         Retirez OUTSCALE_SOURCE_OMI pour prendre la plus récente." >&2
+    exit 1
+  fi
+  SOURCE_OMI="$(cut -f1 <<<"$omi_info")"
+  SOURCE_OMI_NAME="$(cut -f2 <<<"$omi_info")"
+  echo "OMI de base : $SOURCE_OMI  $SOURCE_OMI_NAME  (épinglée)"
+
+else
+  echo "Recherche de la dernière Ubuntu ${UBUNTU_RELEASE} x86_64 publiée par Outscale..."
+  if ! omi_info="$(osc_latest_ubuntu_omi)"; then
+    echo "" >&2
+    echo "Erreur : impossible de résoudre une OMI Ubuntu ${UBUNTU_RELEASE}." >&2
+    echo "         Vérifiez l'accès Outscale :  oapi-cli --profile default ReadVms" >&2
+    echo "         Ou épinglez une base :       OUTSCALE_SOURCE_OMI=ami-xxxxxxxx $0" >&2
+    exit 1
+  fi
+  SOURCE_OMI="$(cut -f1 <<<"$omi_info")"
+  SOURCE_OMI_NAME="$(cut -f2 <<<"$omi_info")"
+  echo "OMI de base : $SOURCE_OMI  $SOURCE_OMI_NAME  ($(cut -f3 <<<"$omi_info"))"
+fi
+
+if [[ ! "$SOURCE_OMI" =~ ^ami-[0-9a-f]+$ ]]; then
+  echo "Erreur : OMI de base invalide ('$SOURCE_OMI')" >&2
+  exit 1
+fi
+
+# La clé privée n'existe que sur l'hôte : ce contrôle échoue volontairement dans la VM,
+# où le build n'est de toute façon pas exécutable (voir le modèle de sécurité global).
+if [[ ! -r "$OUTSCALE_SSH_KEY" ]]; then
+  echo "Erreur : clé privée illisible : $OUTSCALE_SSH_KEY" >&2
+  echo "         Le build s'exécute depuis l'hôte, pas depuis la VM." >&2
+  exit 1
+fi
+
 # Parse optional -debug flag to enable Packer debug mode
 BUILD_OPTS=()
 if [[ "${1:-}" == "-debug" ]]; then
@@ -56,9 +132,7 @@ fi
 # provisioners use ../ paths, so keep packer anchored in build_scripts/.
 cd "$REPO_ROOT/build_scripts"
 
-packer init     "$HCL_FILE"
-packer validate "$HCL_FILE"
-
+packer init "$HCL_FILE"
 
 # juste avant packer build
 args=(
@@ -70,6 +144,10 @@ args=(
   -var "source_omi_name=${SOURCE_OMI_NAME}"
 )
 # optionnel: si BUILD_OPTS n'est pas vide, on l’ajoute proprement
+# validate AVANT build, avec exactement les mêmes variables : appelé sans -var, il
+# échouait sur "a source_omi must be specified" alors que rien n'était cassé.
+packer validate "${args[@]}" "$HCL_FILE"
+
 (( ${#BUILD_OPTS[@]} )) && args+=("${BUILD_OPTS[@]}")
 
 set -x  # pour voir exactement les args passés
