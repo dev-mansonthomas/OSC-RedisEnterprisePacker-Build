@@ -229,63 +229,118 @@ if [ "$deb_count" -ne 1 ]; then
 fi
 REDIS_DEB="$(find /home/$USER/redis-enterprise -maxdepth 1 -name 'redislabs_*.deb' | head -1)"
 
-# Verified with gpg directly rather than through dpkg-sig.
+# Signature verification, with dpkg-sig as the reference implementation.
 #
-# dpkg-sig lives in jammy/universe only, and the build of 2026-09-18 10:07 failed at
-# "Unable to locate package dpkg-sig" when the release pocket went missing. The apt
-# fixes above address that cause, but the security-critical step should not depend on a
-# universe package at all -- dpkg-sig is an unmaintained Perl script, and we already
-# have the signing key with a pinned fingerprint.
+# History, because this took three attempts and the reasoning matters:
 #
-# A signed .deb is an ar archive whose `_gpgorigin` member is a detached signature over
-# the concatenation of the remaining members, in archive order. That is precisely what
-# dpkg-sig checks, so this is the same verification with one less dependency.
-verify_deb_signature() {
-  local deb="$1" tmp sig payload rc member
-  tmp="$(mktemp -d)"; sig="$tmp/sig"; payload="$tmp/payload"
+#  1. dpkg-sig lives in jammy/universe only, and the 10:07 build died at "Unable to
+#     locate package dpkg-sig". That looked like a good reason to drop it.
+#  2. So the check was rewritten to use gpg directly, assuming `_gpgorigin` was a
+#     debsigs-style DETACHED signature over the concatenation of the archive members.
+#     The 10:33 build answered that with "gpg: not a detached signature".
+#  3. It is not. dpkg-sig's own format puts a CLEARSIGNED MANIFEST in `_gpgorigin`,
+#     listing the md5, sha1 and size of each member. Verifying it means checking the
+#     signature over that manifest AND that the members still match the checksums.
+#
+# The apt causes behind (1) are fixed, and dpkg-sig now installs reliably, so it is
+# used as the authority: it is the reference implementation of the format, and
+# reimplementing a checksum-manifest parser for the security-critical step is a worse
+# risk than depending on it. verify_deb_manifest() below is the fallback for when it is
+# absent, and it handles both formats.
+#
+# What makes this trustworthy either way is the fingerprint pinned above: whichever tool
+# checks the signature, it can only be satisfied by the key this repository expects.
 
-  local members=()
-  while IFS= read -r member; do
-    [ "$member" = "_gpgorigin" ] || members+=("$member")
-  done < <(ar t "$deb")
-
-  if [ "${#members[@]}" -eq 0 ]; then
-    echo "ERROR: $deb has no archive members" >&2; rm -rf "$tmp"; return 1
-  fi
+# verify_deb_manifest <deb> -- fallback verifier, used only when dpkg-sig is absent.
+verify_deb_manifest() {
+  local deb="$1" tmp sig rc member
+  tmp="$(mktemp -d)"; sig="$tmp/_gpgorigin"
 
   if ! ar p "$deb" _gpgorigin > "$sig" 2>/dev/null || [ ! -s "$sig" ]; then
     echo "ERROR: $deb carries no _gpgorigin member -- it is NOT signed" >&2
     rm -rf "$tmp"; return 1
   fi
 
-  if ! ar p "$deb" "${members[@]}" > "$payload"; then
-    echo "ERROR: could not extract the signed payload from $deb" >&2
-    rm -rf "$tmp"; return 1
+  if head -1 "$sig" | grep -q 'BEGIN PGP SIGNED MESSAGE'; then
+    # dpkg-sig format: a clearsigned manifest. The signature covers the manifest, so
+    # authenticating it is step one; step two is checking the members still match.
+    echo "    _gpgorigin is a clearsigned manifest (dpkg-sig format)"
+    if ! gpg --verify "$sig" 2>&1 | sed 's/^/    /'; then :; fi
+    if ! gpg --verify "$sig" >/dev/null 2>&1; then
+      echo "ERROR: the manifest signature is not valid" >&2
+      rm -rf "$tmp"; return 1
+    fi
+
+    # Manifest lines are "<md5> <sha1> <size> <member>", one per file, after a
+    # "Files:" header. Selected by SHAPE -- 32 hex, 40 hex, digits, name -- rather than
+    # by skipping known header keywords: a header such as
+    # "Date: Fri, 18 Sep 2026 12:39:14 +0200" also splits into four-plus fields, and an
+    # earlier version of this loop tried to checksum "Sep 2026 12:39:14 +0200".
+    local checked=0
+    while read -r md5 sha1 size member; do
+      printf '%s' "$md5"  | grep -qE '^[0-9a-f]{32}$' || continue
+      printf '%s' "$sha1" | grep -qE '^[0-9a-f]{40}$' || continue
+      printf '%s' "$size" | grep -qE '^[0-9]+$'       || continue
+      [ -n "$member" ] || continue
+      ar p "$deb" "$member" > "$tmp/member" 2>/dev/null || {
+        echo "ERROR: manifest lists '$member', absent from the archive" >&2
+        rm -rf "$tmp"; return 1
+      }
+      local a_md5 a_sha1 a_size
+      a_md5="$(md5sum  "$tmp/member" | cut -d' ' -f1)"
+      a_sha1="$(sha1sum "$tmp/member" | cut -d' ' -f1)"
+      a_size="$(wc -c < "$tmp/member" | tr -d ' ')"
+      if [ "$a_md5" != "$md5" ] || [ "$a_sha1" != "$sha1" ] || [ "$a_size" != "$size" ]; then
+        echo "ERROR: '$member' does not match the signed manifest" >&2
+        echo "       expected md5=$md5 sha1=$sha1 size=$size" >&2
+        echo "       actual   md5=$a_md5 sha1=$a_sha1 size=$a_size" >&2
+        rm -rf "$tmp"; return 1
+      fi
+      echo "    manifest match: $member"
+      checked=$((checked + 1))
+    done < <(gpg --decrypt "$sig" 2>/dev/null | tr -s ' \t' '  ')
+
+    if [ "$checked" -eq 0 ]; then
+      echo "ERROR: the signed manifest listed no files to check" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    echo "    $checked member(s) verified against the signed manifest"
+    rm -rf "$tmp"; return 0
   fi
 
-  gpg --verify "$sig" "$payload" 2>&1 | sed 's/^/    /'
-  gpg --verify "$sig" "$payload" >/dev/null 2>&1
+  # debsigs format: a detached signature over the concatenated members.
+  echo "    _gpgorigin is a detached signature (debsigs format)"
+  local members=()
+  while IFS= read -r member; do
+    [ "$member" = "_gpgorigin" ] || members+=("$member")
+  done < <(ar t "$deb")
+  if [ "${#members[@]}" -eq 0 ]; then
+    echo "ERROR: $deb has no archive members" >&2; rm -rf "$tmp"; return 1
+  fi
+  ar p "$deb" "${members[@]}" > "$tmp/payload" || { rm -rf "$tmp"; return 1; }
+  gpg --verify "$sig" "$tmp/payload" 2>&1 | sed 's/^/    /'
+  gpg --verify "$sig" "$tmp/payload" >/dev/null 2>&1
   rc=$?
   rm -rf "$tmp"
   return "$rc"
 }
 
 echo "--- Verifying the signature of $(basename "$REDIS_DEB") ---"
-if ! verify_deb_signature "$REDIS_DEB"; then
-  echo "ERROR: signature verification of $REDIS_DEB failed" >&2
-  echo "       The package is not signed by the pinned Redis key." >&2
-  exit 1
-fi
-echo "Signature verified against the pinned Redis key."
-
-# Cross-check with dpkg-sig when it happens to be installed. Not required, and never
-# fatal on absence: the gpg check above is the authority.
 if command -v dpkg-sig >/dev/null; then
   dpkg-sig --verify "$REDIS_DEB" || {
-    echo "ERROR: dpkg-sig disagrees with the gpg verification of $REDIS_DEB" >&2
+    echo "ERROR: signature verification of $REDIS_DEB failed (dpkg-sig)" >&2
+    echo "       The package is not signed by the pinned Redis key." >&2
     exit 1
   }
-  echo "dpkg-sig cross-check agrees."
+  echo "Signature verified by dpkg-sig against the pinned Redis key."
+else
+  echo "dpkg-sig absent; falling back to direct verification." >&2
+  if ! verify_deb_manifest "$REDIS_DEB"; then
+    echo "ERROR: signature verification of $REDIS_DEB failed" >&2
+    echo "       The package is not signed by the pinned Redis key." >&2
+    exit 1
+  fi
+  echo "Signature verified against the pinned Redis key."
 fi
 
 

@@ -74,14 +74,26 @@ it "and no longer installs the bare 'netcat' virtual package"
 assert_status 1 grep -qE 'install .*[[:space:]]netcat[[:space:]]' "$P"
 
 # ---------- the signature check must not depend on a universe package ----------
-it "verifies the .deb with gpg directly, not through dpkg-sig"
-assert_contains "$(cat "$P")" "verify_deb_signature"
+it "uses dpkg-sig as the authority when present -- it is the reference implementation"
+assert_status 0 grep -qE 'if command -v dpkg-sig' "$P"
 
-it "treats a missing dpkg-sig as non-fatal -- gpg is the authority"
-assert_contains "$(cat "$P")" "only an optional cross-check"
+it "and falls back to its own verifier when dpkg-sig is absent"
+assert_contains "$(cat "$P")" "verify_deb_manifest"
 
-it "still cross-checks with dpkg-sig when it is installed"
-assert_contains "$(cat "$P")" "dpkg-sig cross-check agrees"
+it "the fallback handles the clearsigned-manifest format Redis actually ships"
+assert_contains "$(cat "$P")" "clearsigned manifest (dpkg-sig format)"
+
+it "and still handles the debsigs detached-signature format"
+assert_contains "$(cat "$P")" "detached signature (debsigs format)"
+
+it "fails the build when neither path can verify the package"
+assert_contains "$(sed -n '/Verifying the signature of/,/^fi$/p' "$P")" "exit 1"
+
+it "keeps dpkg-sig installable but non-fatal, so its absence degrades rather than blocks"
+assert_status 0 grep -qE '^UTILS=.*dpkg-sig' "$P"
+
+it "records why dpkg-sig came back as the authority"
+assert_contains "$(cat "$P")" "not a detached signature"
 
 # ---------- T-11: the image must not carry a shared identity ----------
 it "removes the SSH host keys"
