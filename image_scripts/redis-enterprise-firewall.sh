@@ -23,6 +23,9 @@
 #                                 --client-cidr  10.20.0.0/16 \
 #                                 --operator-cidr 203.0.113.4/32
 #
+# SSH is NOT narrowed by --operator-cidr; that needs --scope-ssh as well. See the
+# rationale at the port-22 rule below.
+#
 # Port assignments follow the Redis Enterprise port matrix:
 # https://redis.io/docs/latest/operate/rs/networking/port-configurations/
 # Cross-checked against `ss -tlnp` on a real node -- see
@@ -33,6 +36,7 @@ CLUSTER_CIDR=""     # node-to-node; internal-only ports
 CLIENT_CIDR="any"   # applications; database and discovery ports
 OPERATOR_CIDR="any" # humans and tooling; SSH, UI, REST
 ALLOW_INSECURE_REST=0
+SCOPE_SSH=0
 DRY_RUN=0
 
 usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; }
@@ -43,6 +47,7 @@ while [ $# -gt 0 ]; do
     --client-cidr)    CLIENT_CIDR="${2:?}"; shift 2 ;;
     --operator-cidr)  OPERATOR_CIDR="${2:?}"; shift 2 ;;
     --allow-insecure-rest) ALLOW_INSECURE_REST=1; shift ;;
+    --scope-ssh)      SCOPE_SSH=1; shift ;;
     --dry-run)        DRY_RUN=1; shift ;;
     -h|--help)        usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -115,7 +120,22 @@ run ufw default allow outgoing
 run ufw allow in on lo
 run ufw allow out on lo
 
-allow tcp 22 "$OPERATOR_CIDR"
+# SSH stays reachable unless narrowing it is asked for EXPLICITLY.
+#
+# --operator-cidr legitimately narrows the admin plane (UI, REST, metrics), but applying
+# it to port 22 as well makes a single wrong CIDR lock the operator out of a running
+# node -- with no console fallback on Outscale. Losing management access is worse than
+# leaving SSH reachable, and the security group is the right place to scope it anyway.
+# Narrowing SSH therefore requires --scope-ssh on top of --operator-cidr.
+if [ "$SCOPE_SSH" -eq 1 ] && [ "$OPERATOR_CIDR" != "any" ]; then
+  echo "  SSH scoped to $OPERATOR_CIDR (--scope-ssh given)"
+  allow tcp 22 "$OPERATOR_CIDR"
+else
+  if [ "$OPERATOR_CIDR" != "any" ]; then
+    echo "  SSH left open to any: pass --scope-ssh to restrict it to $OPERATOR_CIDR"
+  fi
+  allow tcp 22 any
+fi
 
 for p in $OPERATOR_TCP; do allow tcp "$p" "$OPERATOR_CIDR"; done
 for p in $CLIENT_TCP;   do allow tcp "$p" "$CLIENT_CIDR";   done

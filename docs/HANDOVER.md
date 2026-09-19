@@ -106,7 +106,11 @@ Add both to `docs/reference/hardening-baseline.md`. PR 10 (AppArmor) needs the s
    signature. An attempt to replace `dpkg-sig` with plain `gpg --verify` failed on the
    real package. `dpkg-sig` is the authority; `verify_deb_manifest()` is the fallback and
    handles both formats.
-7. **Editing `/etc/ssh/sshd_config` changes nothing.** `40-outscale.conf` (Outscale's own
+7. **SSH must stay reachable.** The firewall never narrows port 22 from
+   `--operator-cidr` alone; that needs `--scope-ssh` too. Outscale has no console
+   fallback, so a wrong CIDR would be unrecoverable. The build also refuses to publish an
+   image with no SSH rule at all.
+8. **Editing `/etc/ssh/sshd_config` changes nothing.** `40-outscale.conf` (Outscale's own
    drop-in) is read first and wins. It already sets `PermitRootLogin no` and
    `PasswordAuthentication no`, so T-22 is **already satisfied** — a drop-in numbered
    below 40 is only about owning the guarantee.

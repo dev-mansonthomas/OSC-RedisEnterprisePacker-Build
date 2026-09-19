@@ -139,9 +139,32 @@ it "does not expose internode ports to the world by default"
 assert_eq "" "$(printf '%s\n' "$PLAN" | grep -F '+ ufw allow proto tcp to any port 3333:3345' || true)"
 
 # ---------- CIDR scoping at run time ----------
-it "scopes SSH to the operator CIDR when given one"
+# SSH must stay reachable: losing management access to a running node is worse than
+# leaving port 22 open, and there is no console fallback on Outscale. Narrowing it is
+# therefore opt-in, so a single wrong --operator-cidr cannot lock the operator out.
+it "leaves SSH open to any even when an operator CIDR narrows the admin plane"
 assert_contains "$(bash "$FW" --dry-run --operator-cidr 203.0.113.4/32 2>/dev/null)" \
+  "+ ufw allow proto tcp to any port 22"
+
+it "and says how to narrow it, rather than silently leaving it open"
+assert_contains "$(bash "$FW" --dry-run --operator-cidr 203.0.113.4/32 2>/dev/null)" \
+  "pass --scope-ssh"
+
+it "narrows SSH only when --scope-ssh is given as well"
+assert_contains "$(bash "$FW" --dry-run --operator-cidr 203.0.113.4/32 --scope-ssh 2>/dev/null)" \
   "from 203.0.113.4/32 proto tcp to any port 22"
+
+it "and then no longer allows SSH from anywhere"
+assert_eq "" "$(bash "$FW" --dry-run --operator-cidr 203.0.113.4/32 --scope-ssh 2>/dev/null \
+  | grep -F '+ ufw allow proto tcp to any port 22' || true)"
+
+it "still narrows the admin plane itself with --operator-cidr alone"
+assert_contains "$(bash "$FW" --dry-run --operator-cidr 203.0.113.4/32 2>/dev/null)" \
+  "from 203.0.113.4/32 proto tcp to any port 8443"
+
+it "--scope-ssh without an operator CIDR keeps SSH open rather than denying it"
+assert_contains "$(bash "$FW" --dry-run --scope-ssh 2>/dev/null)" \
+  "+ ufw allow proto tcp to any port 22"
 
 it "scopes database ports to the client CIDR when given one"
 assert_contains "$(bash "$FW" --dry-run --client-cidr 10.20.0.0/16 2>/dev/null)" \
