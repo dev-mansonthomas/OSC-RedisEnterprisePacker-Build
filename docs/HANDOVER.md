@@ -1,7 +1,7 @@
 # Handover — OSC-RedisEnterprisePacker-Build
 
 For a fresh Claude Code session that will work **only on this repository**.
-Written 2026-09-19. Read this, then `CLAUDE.md`, then `docs/findings.md`.
+Written 2026-09-19. Read this, then `docs/NEXT-TESTS.md`, then `CLAUDE.md`, then `docs/findings.md`.
 
 ## Where things stand
 

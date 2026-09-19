@@ -242,6 +242,7 @@ Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 ## Agent docs
 
 - `docs/HANDOVER.md` — **start here in a fresh session**: state, what is owed, traps
+- `docs/NEXT-TESTS.md` — the concrete test queue, with commands, and cleanup owed
 
 - `docs/product/PRD.md` — problem, users, scope
 - `docs/architecture/build-and-run-overview.md` — **start here**: end-to-end Build→OMI→Run
