@@ -114,7 +114,7 @@ The structural fix behind Q1 — makes `osc-setup.sh` load-bearing instead of de
 **Gate:** `packer.out` shows a non-empty `SubnetId` matching `OSC_SUBNET1`; build succeeds;
 `rlcheck` still passes.
 
-### PR 6 — Image security, non-breaking `[HOST]`
+### PR 6 — Image security, non-breaking `[HOST]` ✅ **IMPLEMENTED 2026-09-18** (host build owed)
 
 Nothing here can break Redis Enterprise.
 
@@ -151,7 +151,7 @@ down ~2 GB.
 
 **Gate:** `auditctl -l` non-empty; `rlcheck` passes; 3-node cluster forms.
 
-### PR 9 — UFW `[HOST+RUN]` ⚠ medium risk
+### PR 9 — UFW `[HOST+RUN]` ⚠ medium risk — **RULE SET WRITTEN 2026-09-19**, cluster validation owed
 
 - Generate the UFW allow-list from the **same port table** as the security group rather than
   hand-maintaining a second list. The committed block is missing `1968`, `3333-3355`, `8002`,
@@ -197,7 +197,7 @@ suggests it fixed something real.
 | 3 | Version detection and download ✅ | `[VM]` | – | – | none |
 | 4 | Wrapper and HCL correctness ✅ *(host build still owed)* | `[VM]`+`[HOST]` | 1 | – | low |
 | ~~5~~ | ~~Run the build inside the Net~~ **postponed** | `[HOST]` | 1 | – | low-med |
-| 6 | Image security, non-breaking | `[HOST]` | 1 | – | low |
+| 6 | Image security, non-breaking ✅ *(host build owed)* | `[HOST]` | 1 | – | low |
 | 7 | SSH hardening | `[HOST+RUN]` | 1 | yes | low |
 | 8 | Audit logging + update policy | `[HOST+RUN]` | 1 | yes | low |
 | 9 | UFW | `[HOST+RUN]` | 1+ | yes | **medium** |

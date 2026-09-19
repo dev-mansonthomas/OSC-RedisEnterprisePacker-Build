@@ -241,10 +241,15 @@ Plus `FETCH_OPTS`, `SKIP_OMI_CHECK`.
 
 ## Agent docs
 
+- `docs/HANDOVER.md` — **start here in a fresh session**: state, what is owed, traps
+- `docs/NEXT-TESTS.md` — the concrete test queue, with commands, and cleanup owed
+
 - `docs/product/PRD.md` — problem, users, scope
 - `docs/architecture/build-and-run-overview.md` — **start here**: end-to-end Build→OMI→Run
 - `docs/architecture/overview.md` — this repo's internals, with diagrams
 - `docs/findings.md` — **what to improve in this repo**, prioritised
+- `docs/reference/hardening-baseline.md` — SSH/UFW/AppArmor/audit state and listening
+  ports **measured on a real image**; the reference PRs 7-10 modify
 - `docs/handover-run-findings.md` — Run-phase findings, **parked**; do not fix them from here
 - `docs/specs/*.md` — per-script contracts (inputs, outputs, edge cases, acceptance criteria)
 - `docs/adr/*.md` — decisions and why

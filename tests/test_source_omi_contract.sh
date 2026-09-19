@@ -55,7 +55,10 @@ assert_status 0 grep -qE '^[A-Z].*[.?]$' <<<"$msg"
 it "provisioner sources are anchored on path.root, not the CWD (T-08)"
 assert_eq "0" "$(grep -cE 'source[[:space:]]+=[[:space:]]+"\.\./' "$HCL")"
 
-it "all three provisioner sources use path.root"
-assert_eq "3" "$(grep -cE 'source[[:space:]]+=[[:space:]]+"\$\{path\.root\}/' "$HCL")"
+it "EVERY file provisioner source uses path.root, however many there are"
+# Count-agnostic on purpose: asserting "3" broke when the firewall script became a
+# fourth provisioner, reporting a failure for a correct change.
+assert_eq "$(grep -c 'provisioner "file"' "$HCL")" \
+          "$(grep -cE 'source[[:space:]]+=[[:space:]]+"\$\{path\.root\}/' "$HCL")"
 
 finish
