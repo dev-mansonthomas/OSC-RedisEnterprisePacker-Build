@@ -155,6 +155,11 @@ build {
   }
 
   provisioner "file" {
+    source      = "${path.root}/../image_scripts/redis-enterprise-firewall.sh"
+    destination = "/home/outscale/redis-enterprise-firewall.sh"
+  }
+
+  provisioner "file" {
     source      = "${path.root}/../image_scripts/redis-install-answers.txt" # corrige la coquille
     destination = "/home/outscale/redis-install-answers.txt"
   }

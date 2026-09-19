@@ -365,6 +365,55 @@ bash ./install.sh -c ./redis-install-answers.txt
 
 
 ###################################################################################
+# Host firewall (TODO T-19)
+###################################################################################
+# Applied AFTER install.sh, so the rule set is enabled on a node whose services are
+# already in place and can be checked; and so a firewall mistake cannot be confused
+# with an installation failure.
+#
+# The image is unconfigured by design, so the build-time pass gives PORT-scope defence
+# only: SSH and the Redis Enterprise port set are reachable, everything else is denied.
+# CIDR-scope defence is the deployment's job -- OSC-RedisEnterprisePacker-Run, or the
+# customer, re-runs the same script with real CIDRs:
+#
+#   redis-enterprise-firewall --cluster-cidr 10.0.0.0/16 \
+#                             --client-cidr 10.20.0.0/16 \
+#                             --operator-cidr 203.0.113.4/32
+#
+# firewall=no is kept in the answer file on purpose: we own the rule set here, and
+# letting install.sh add its own on top would mean two sources of truth for the same
+# policy. The previous mismatch between a commented-out UFW block and firewall=no is the
+# likeliest reason enabling UFW never worked -- see docs/reference/hardening-baseline.md.
+echo "--- Installing the firewall helper ---"
+install -m 0755 /home/$USER/redis-enterprise-firewall.sh \
+  /usr/local/sbin/redis-enterprise-firewall
+echo "Installed /usr/local/sbin/redis-enterprise-firewall"
+
+if command -v ufw >/dev/null; then
+  echo "--- Applying the build-time firewall (port scope only) ---"
+  /usr/local/sbin/redis-enterprise-firewall
+
+  # Assert the result rather than trusting it: an inactive firewall after this point
+  # would be a silent loss of the whole control.
+  if ! ufw status | head -1 | grep -q 'Status: active'; then
+    echo "ERROR: ufw is not active after applying the rules" >&2
+    exit 1
+  fi
+  echo "Host firewall active."
+
+  # SSH must survive, or the image is unusable and Packer's next step would hang.
+  ufw status | grep -qE '(^|[[:space:]])22/tcp' || {
+    echo "ERROR: no rule allows SSH; refusing to publish an unreachable image" >&2
+    exit 1
+  }
+  echo "SSH rule present."
+else
+  echo "ERROR: ufw is not installed; cannot apply the host firewall" >&2
+  exit 1
+fi
+
+
+###################################################################################
 # Post-install assertions
 ###################################################################################
 # install.sh is told ntp=no, and it warns that clock synchronisation is now our
@@ -415,6 +464,7 @@ rm -f  /etc/resolv.conf.orig
 # This script itself, uploaded by Packer. Confirmed still present on a VM launched from
 # ami-57a302f4: it describes how the image was built and has no business in it.
 rm -f  /home/$USER/prepare-and-install-redis-install.sh
+rm -f  /home/$USER/redis-enterprise-firewall.sh
 rm -f  /home/$USER/redis-install-answers.txt
 apt-get clean
 rm -rf /var/lib/apt/lists/*

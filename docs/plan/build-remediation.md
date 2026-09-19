@@ -151,7 +151,7 @@ down ~2 GB.
 
 **Gate:** `auditctl -l` non-empty; `rlcheck` passes; 3-node cluster forms.
 
-### PR 9 — UFW `[HOST+RUN]` ⚠ medium risk
+### PR 9 — UFW `[HOST+RUN]` ⚠ medium risk — **RULE SET WRITTEN 2026-09-19**, cluster validation owed
 
 - Generate the UFW allow-list from the **same port table** as the security group rather than
   hand-maintaining a second list. The committed block is missing `1968`, `3333-3355`, `8002`,

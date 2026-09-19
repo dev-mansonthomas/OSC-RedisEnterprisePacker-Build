@@ -212,4 +212,38 @@ else
   echo "  SKIP gpg absent: fingerprint-gate functional tests not run" >&2
 fi
 
+# ---------- T-19: the host firewall ----------
+it "installs the firewall helper into the image, so RUN can re-scope it"
+assert_contains "$(cat "$P")" "/usr/local/sbin/redis-enterprise-firewall"
+
+it "applies the firewall AFTER install.sh, not before"
+fw="$(grep -n 'Applying the build-time firewall' "$P" | cut -d: -f1)"
+inst="$(grep -n 'bash ./install.sh' "$P" | cut -d: -f1)"
+assert_status 0 test "$inst" -lt "$fw"
+
+it "asserts ufw ends up active rather than trusting it"
+assert_contains "$(cat "$P")" "ufw is not active after applying the rules"
+
+it "refuses to publish an image with no SSH rule"
+assert_contains "$(cat "$P")" "refusing to publish an unreachable image"
+
+it "fails when ufw is absent instead of silently skipping the firewall"
+assert_contains "$(cat "$P")" "ufw is not installed; cannot apply the host firewall"
+
+it "keeps firewall=no, so install.sh does not add a competing rule set"
+assert_status 0 grep -qx 'firewall=no' "$(dirname "$P")/redis-install-answers.txt"
+
+it "explains why firewall=no is deliberate rather than leftover"
+assert_contains "$(cat "$P")" "two sources of truth for the same"
+
+it "removes the uploaded firewall script from the image"
+assert_contains "$(cat "$P")" "rm -f  /home/\$USER/redis-enterprise-firewall.sh"
+
+it "the Packer template uploads the firewall script"
+HCL="$(cd "$(dirname "$P")/.." && pwd)/packer/redis_ubuntu_outscale_image.pkr.hcl"
+assert_contains "$(cat "$HCL")" "redis-enterprise-firewall.sh"
+
+it "which means four file provisioners now, not three"
+assert_eq "4" "$(grep -c 'provisioner "file"' "$HCL")"
+
 finish
